@@ -3,100 +3,179 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
-<meta name="theme-color" content="#f3e9f1">
-<title>Crumble — a kinetic sand ASMR game</title>
+<meta name="theme-color" content="#211a3b">
+<title>Crumble — sand, glass and a slow breath</title>
 <style>
   :root {
-    --ink: #4a3f55;
-    --soft: #8a7d96;
-    --card: rgba(255, 255, 255, .72);
+    --ink: #fff7fb;
+    --soft: rgba(255, 240, 250, .68);
+    --glass: rgba(255, 255, 255, .12);
+    --glass-edge: rgba(255, 255, 255, .28);
+    --accent: linear-gradient(135deg, #f5a3c7, #b9a2ff 55%, #8fd3ff);
   }
   * { box-sizing: border-box; }
   html, body {
-    margin: 0; height: 100%; overflow: hidden;
-    background: #f3e9f1; color: var(--ink);
+    margin: 0; height: 100%; overflow: hidden; background: #211a3b; color: var(--ink);
     font-family: ui-rounded, "SF Pro Rounded", system-ui, -apple-system, "Segoe UI", sans-serif;
     -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent;
   }
   canvas { display: block; width: 100vw; height: 100vh; touch-action: none; }
+  button { font: inherit; color: inherit; }
+
+  .glass {
+    background: var(--glass);
+    border: 1px solid var(--glass-edge);
+    box-shadow: 0 8px 30px rgba(10, 0, 30, .25), inset 0 1px 0 rgba(255, 255, 255, .35);
+    backdrop-filter: blur(14px) saturate(140%); -webkit-backdrop-filter: blur(14px) saturate(140%);
+  }
+
   #hud {
-    position: fixed; inset: 0 0 auto 0; display: flex; justify-content: space-between; align-items: center;
-    padding: max(14px, env(safe-area-inset-top)) 18px 0; pointer-events: none;
+    position: fixed; inset: 0 0 auto 0; display: flex; justify-content: space-between; align-items: center; gap: 8px;
+    padding: max(14px, env(safe-area-inset-top)) 14px 0; pointer-events: none;
+    opacity: 0; transform: translateY(-10px); transition: opacity .6s, transform .6s;
   }
-  #score { font-size: 22px; font-weight: 700; letter-spacing: .5px; }
-  #combo { font-size: 14px; color: var(--soft); margin-left: 8px; }
-  #mute {
-    pointer-events: auto; border: 0; background: var(--card); color: var(--ink);
-    width: 42px; height: 42px; border-radius: 50%; font-size: 18px; cursor: pointer;
-    box-shadow: 0 2px 10px rgba(74, 63, 85, .12);
+  body.playing #hud { opacity: 1; transform: none; }
+  .pill { height: 42px; border-radius: 999px; display: inline-flex; align-items: center; gap: 6px; padding: 0 14px; }
+  .btn { pointer-events: auto; cursor: pointer; border: 1px solid var(--glass-edge); }
+  .btn:active { transform: scale(.95); }
+  .right { display: flex; gap: 8px; }
+  #score { font-size: 19px; font-weight: 800; letter-spacing: .3px; font-variant-numeric: tabular-nums; }
+  #combo { font-size: 12px; color: var(--soft); }
+  #jarPill { padding: 0 12px 0 6px; font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  #ring { transform: rotate(-90deg); }
+  #ring circle { fill: none; stroke-width: 4; }
+  #ringBg { stroke: rgba(255, 255, 255, .18); }
+  #ringFg { stroke: url(#ringGrad); stroke-linecap: round; transition: stroke-dashoffset .4s; }
+  #mute { width: 42px; padding: 0; justify-content: center; }
+
+  #breath {
+    position: fixed; left: 0; right: 0; top: calc(max(14px, env(safe-area-inset-top)) + 58px);
+    text-align: center; font-size: 13px; letter-spacing: 3px; text-transform: lowercase; color: var(--soft);
+    pointer-events: none; opacity: 0; transition: opacity 1.2s;
   }
+  body.playing #breath { opacity: 1; }
   #hint {
-    position: fixed; left: 0; right: 0; bottom: max(18px, env(safe-area-inset-bottom));
-    text-align: center; color: var(--soft); font-size: 14px; pointer-events: none; transition: opacity .6s;
+    position: fixed; left: 0; right: 0; bottom: max(14px, env(safe-area-inset-bottom));
+    text-align: center; color: var(--soft); font-size: 13px; pointer-events: none; transition: opacity .8s; opacity: 0;
   }
-  #start {
-    position: fixed; inset: 0; display: grid; place-items: center; text-align: center;
-    background: radial-gradient(circle at 50% 40%, rgba(255,255,255,.55), rgba(243,233,241,.2));
-    backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); transition: opacity .5s;
+  body.playing #hint { opacity: 1; }
+  body.cut-once #hint { opacity: 0; }
+
+  .overlay {
+    position: fixed; inset: 0; display: grid; place-items: center; padding: 24px;
+    transition: opacity .5s, visibility .5s;
   }
-  #start.hidden { opacity: 0; pointer-events: none; }
-  #start h1 { font-size: 54px; margin: 0 0 6px; letter-spacing: 1px; }
-  #start p { margin: 4px 0; color: var(--soft); }
-  #start button {
-    margin-top: 26px; border: 0; border-radius: 999px; padding: 14px 34px; font: inherit; font-size: 18px; font-weight: 700;
-    color: #fff; background: linear-gradient(135deg, #e79ab6, #b8a1ea); cursor: pointer;
-    box-shadow: 0 8px 24px rgba(184, 161, 234, .45);
+  .overlay.hidden { opacity: 0; visibility: hidden; pointer-events: none; }
+  .card { width: min(380px, 100%); border-radius: 28px; padding: 28px 24px; text-align: center; }
+  .overlay.hidden .card { transform: translateY(16px) scale(.97); }
+  .card { transition: transform .5s cubic-bezier(.2, .9, .3, 1.2); }
+
+  #start .card { padding: 34px 26px 28px; }
+  h1 {
+    font-size: 58px; line-height: 1; margin: 0 0 12px; letter-spacing: 1px;
+    background: linear-gradient(110deg, #ffd6e8 0%, #fff 30%, #c9b8ff 50%, #fff 70%, #ffd6e8 100%);
+    background-size: 250% 100%; -webkit-background-clip: text; background-clip: text; color: transparent;
+    animation: shimmer 5s linear infinite;
   }
+  @keyframes shimmer { to { background-position: -250% 0; } }
+  .lead { font-size: 17px; margin: 0 0 10px; }
+  .sub { color: var(--soft); font-size: 14px; margin: 6px 0; line-height: 1.45; }
+  .cta {
+    margin-top: 22px; border: 0; border-radius: 999px; padding: 15px 38px; font-size: 18px; font-weight: 800;
+    color: #2a1d45; background: var(--accent); cursor: pointer;
+    box-shadow: 0 10px 30px rgba(185, 162, 255, .45), inset 0 1px 0 rgba(255, 255, 255, .6);
+    animation: breathe 4s ease-in-out infinite;
+  }
+  .ghost { margin-top: 10px; background: none; border: 0; color: var(--soft); cursor: pointer; font-size: 14px; text-decoration: underline; text-underline-offset: 3px; }
+  @keyframes breathe { 50% { transform: scale(1.05); box-shadow: 0 14px 40px rgba(245, 163, 199, .55), inset 0 1px 0 rgba(255,255,255,.6); } }
+
+  #done .card, #shelf .card { background: rgba(36, 22, 62, .66); }
+  #done img { height: 170px; margin: 4px auto 6px; display: block; filter: drop-shadow(0 10px 18px rgba(0, 0, 0, .35)); }
+  #done h2 { margin: 0; font-size: 14px; letter-spacing: 3px; text-transform: uppercase; color: var(--soft); }
+  #jarName { font-size: 24px; font-weight: 800; margin: 6px 0 14px; }
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 4px; }
+  .stats div { border-radius: 14px; padding: 8px 2px; background: rgba(255, 255, 255, .08); }
+  .stats b { display: block; font-size: 18px; }
+  .stats span { font-size: 11px; color: var(--soft); }
+
+  #shelf .card { width: min(560px, 100%); max-height: 86vh; display: flex; flex-direction: column; }
+  #shelf h2 { margin: 0 0 4px; }
+  #shelfGrid {
+    overflow: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 12px;
+    padding: 14px 2px 6px; margin: 8px 0;
+    background: linear-gradient(transparent calc(100% - 10px), rgba(255,255,255,.18) calc(100% - 10px));
+  }
+  #shelfGrid figure { margin: 0; animation: pop .5s cubic-bezier(.2, .9, .3, 1.3) both; }
+  #shelfGrid img { width: 100%; height: 130px; object-fit: contain; filter: drop-shadow(0 8px 12px rgba(0,0,0,.3)); }
+  #shelfGrid figcaption { font-size: 12px; font-weight: 700; }
+  #shelfGrid small { display: block; color: var(--soft); font-weight: 400; }
+  @keyframes pop { from { opacity: 0; transform: translateY(10px) scale(.9); } }
+  .empty { color: var(--soft); padding: 30px 0; }
 </style>
 </head>
 <body>
 <canvas id="c"></canvas>
+
 <div id="hud">
-  <div><span id="score">0</span><span id="combo"></span></div>
-  <button id="mute" aria-label="Mute sound">🔊</button>
+  <div class="pill glass">✦ <span id="score">0</span><span id="combo"></span></div>
+  <div class="right">
+    <div class="pill glass" id="jarPill" title="Jar filled">
+      <svg id="ring" width="30" height="30" viewBox="0 0 30 30" aria-hidden="true">
+        <defs><linearGradient id="ringGrad" x1="0" x2="1"><stop offset="0" stop-color="#f5a3c7"/><stop offset="1" stop-color="#8fd3ff"/></linearGradient></defs>
+        <circle id="ringBg" cx="15" cy="15" r="11"/>
+        <circle id="ringFg" cx="15" cy="15" r="11" stroke-dasharray="69.1" stroke-dashoffset="69.1"/>
+      </svg>
+      <span id="fillPct">0%</span>
+    </div>
+    <button class="pill glass btn" id="shelfBtn" aria-label="Open your shelf">🫙 <span id="shelfCount">0</span></button>
+    <button class="pill glass btn" id="mute" aria-label="Mute sound">🔊</button>
+  </div>
 </div>
-<div id="hint">Swipe along the dotted line ✂️</div>
-<div id="start">
-  <div>
+<div id="breath">breathe in</div>
+<div id="hint">swipe along the glowing line · cut as you breathe out</div>
+
+<div id="start" class="overlay">
+  <div class="card glass">
     <h1>Crumble</h1>
-    <p>a kinetic sand ASMR game</p>
-    <p>🎧 best with headphones</p>
-    <button id="play">Tap to start</button>
+    <p class="lead">Slice soft sand. Fill a glass jar. Breathe.</p>
+    <p class="sub">Every jar is a two-minute calm ritual,<br>and a piece of sand art you keep on your shelf.</p>
+    <p class="sub">🎧 headphones recommended</p>
+    <button class="cta" id="play">Begin</button><br>
+    <button class="ghost" id="startShelf" hidden>see your shelf</button>
+  </div>
+</div>
+
+<div id="done" class="overlay hidden">
+  <div class="card glass">
+    <h2>✦ jar complete ✦</h2>
+    <img id="doneImg" alt="Your finished sand jar">
+    <div id="jarName"></div>
+    <div class="stats">
+      <div><b id="stCuts">0</b><span>cuts</span></div>
+      <div><b id="stPerfect">0%</b><span>precise</span></div>
+      <div><b id="stCalm">0</b><span>calm cuts</span></div>
+      <div><b id="stTime">0:00</b><span>minutes</span></div>
+    </div>
+    <button class="cta" id="nextJar">Next jar</button><br>
+    <button class="ghost" id="doneShelf">open your shelf</button>
+  </div>
+</div>
+
+<div id="shelf" class="overlay hidden">
+  <div class="card glass">
+    <h2>Your shelf</h2>
+    <p class="sub" id="shelfSub"></p>
+    <div id="shelfGrid"></div>
+    <button class="cta" id="closeShelf">Back</button>
   </div>
 </div>
 
 <script>
 "use strict";
 
-// ---------- canvas & layout ----------
+// ---------- helpers ----------
 
-const cvs = document.getElementById("c");
-const ctx = cvs.getContext("2d");
-let W = 0, H = 0, DPR = 1, floorY = 0;
-
-const PALETTES = [
-  ["#f7b2c4", "#fbd5a5", "#fdf0b2", "#b8e6c9", "#a9d3f5"],
-  ["#cdb4f0", "#f7b2c4", "#a9d3f5", "#fdf0b2"],
-  ["#9fd8cb", "#f6c6a8", "#f3a6b8", "#c9b6ef", "#fbe7a1"],
-  ["#ffc8dd", "#ffafcc", "#bde0fe", "#a2d2ff", "#cdb4db"],
-  ["#f9d5a7", "#f6b4a0", "#e98fa5", "#b9a3e3"],
-  ["#b5ead7", "#c7ceea", "#ffdac1", "#e2f0cb", "#ff9aa2"],
-];
-
-function resize() {
-  DPR = Math.min(window.devicePixelRatio || 1, 2);
-  W = window.innerWidth;
-  H = window.innerHeight;
-  cvs.width = Math.round(W * DPR);
-  cvs.height = Math.round(H * DPR);
-  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-  floorY = Math.round(H * 0.7);
-  resetPile();
-  if (game.started) newBlock(false);
-}
-
-// ---------- geometry helpers ----------
-
+const $ = id => document.getElementById(id);
 const sub = (a, b) => [a[0] - b[0], a[1] - b[1]];
 const dot = (a, b) => a[0] * b[0] + a[1] * b[1];
 const cross = (a, b) => a[0] * b[1] - a[1] * b[0];
@@ -104,6 +183,16 @@ const len = a => Math.hypot(a[0], a[1]);
 const norm = a => { const l = len(a) || 1; return [a[0] / l, a[1] / l]; };
 const rand = (a, b) => a + Math.random() * (b - a);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const lerp = (a, b, t) => a + (b - a) * t;
+const pick = arr => arr[Math.floor(Math.random() * arr.length)];
+const easeOutBack = t => 1 + 2.4 * Math.pow(t - 1, 3) + 1.4 * Math.pow(t - 1, 2);
+const easeOutBounce = t => {
+  const n = 7.5625, d = 2.75;
+  if (t < 1 / d) return n * t * t;
+  if (t < 2 / d) return n * (t -= 1.5 / d) * t + 0.75;
+  if (t < 2.5 / d) return n * (t -= 2.25 / d) * t + 0.9375;
+  return n * (t -= 2.625 / d) * t + 0.984375;
+};
 
 function area(poly) {
   let s = 0;
@@ -114,8 +203,7 @@ function area(poly) {
 function centroid(poly) {
   let x = 0, y = 0, a = 0;
   for (let i = 0; i < poly.length; i++) {
-    const p = poly[i], q = poly[(i + 1) % poly.length];
-    const c = cross(p, q);
+    const p = poly[i], q = poly[(i + 1) % poly.length], c = cross(p, q);
     a += c; x += (p[0] + q[0]) * c; y += (p[1] + q[1]) * c;
   }
   a *= 0.5;
@@ -157,8 +245,7 @@ function split(poly, p, d) {
 
 function roundedRect(x, y, w, h, r) {
   const pts = [];
-  const corners = [[x + w - r, y + r, -90], [x + w - r, y + h - r, 0], [x + r, y + h - r, 90], [x + r, y + r, 180]];
-  for (const [cx, cy, start] of corners) {
+  for (const [cx, cy, start] of [[x + w - r, y + r, -90], [x + w - r, y + h - r, 0], [x + r, y + h - r, 90], [x + r, y + r, 180]]) {
     for (let i = 0; i <= 6; i++) {
       const a = (start + i * 15) * Math.PI / 180;
       pts.push([cx + Math.cos(a) * r, cy + Math.sin(a) * r]);
@@ -167,7 +254,12 @@ function roundedRect(x, y, w, h, r) {
   return pts;
 }
 
-// ---------- audio (all sounds are synthesized) ----------
+const store = {
+  get(key, fallback) { try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch { return fallback; } },
+  set(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); return true; } catch { return false; } },
+};
+
+// ---------- audio: every sound is synthesized ----------
 
 const sfx = {
   ac: null, master: null, noise: null, muted: false,
@@ -183,17 +275,47 @@ const sfx = {
     this.master.gain.value = 0.9;
     this.master.connect(comp).connect(this.ac.destination);
 
-    // Two seconds of slightly pink noise, the raw material for every grain of sand
+    // slightly pink noise: the raw material for every grain of sand
     const n = this.ac.sampleRate * 2;
     this.noise = this.ac.createBuffer(1, n, this.ac.sampleRate);
     const data = this.noise.getChannelData(0);
     let last = 0;
     for (let i = 0; i < n; i++) { last = 0.7 * last + 0.3 * (Math.random() * 2 - 1); data[i] = last * 2.2; }
+    this.pad();
   },
 
-  ready() { return this.ac && !this.muted; },
+  setMuted(m) {
+    this.muted = m;
+    if (this.master) this.master.gain.setTargetAtTime(m ? 0 : 0.9, this.ac.currentTime, 0.15);
+  },
 
-  /** One short filtered noise burst: a single "crunch" of sand. */
+  ready() { return !!this.ac && !this.muted; },
+
+  /** A dreamy, barely-there chord that slowly breathes in the background. */
+  pad() {
+    const ac = this.ac, t = ac.currentTime;
+    const g = ac.createGain();
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.05, t + 5);
+    const lp = ac.createBiquadFilter();
+    lp.type = "lowpass"; lp.frequency.value = 800; lp.Q.value = 0.4;
+    const lfo = ac.createOscillator(), lfoGain = ac.createGain();
+    lfo.frequency.value = 1 / 8; lfoGain.gain.value = 350; // in step with the breathing guide
+    lfo.connect(lfoGain).connect(lp.frequency);
+    lfo.start();
+    for (const f of [220, 277.18, 329.63, 415.3, 554.37]) {
+      for (const detune of [-5, 5]) {
+        const o = ac.createOscillator();
+        o.type = "triangle"; o.frequency.value = f; o.detune.value = detune;
+        const og = ac.createGain(); og.gain.value = 0.16;
+        o.connect(og).connect(lp);
+        o.start();
+      }
+    }
+    lp.connect(g).connect(this.master);
+  },
+
+  /** One short filtered noise burst: a single crunch of sand. */
   grain(t, dur, freq, q, gain, type = "bandpass") {
     const ac = this.ac;
     const src = ac.createBufferSource();
@@ -210,10 +332,22 @@ const sfx = {
     src.stop(t + dur + 0.02);
   },
 
+  tone(t, freq, gain, decay, type = "sine", endFreq = null) {
+    const o = this.ac.createOscillator();
+    o.type = type;
+    o.frequency.setValueAtTime(freq, t);
+    if (endFreq) o.frequency.exponentialRampToValueAtTime(endFreq, t + decay * 0.5);
+    const g = this.ac.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(gain, t + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + decay);
+    o.connect(g).connect(this.master);
+    o.start(t); o.stop(t + decay + 0.05);
+  },
+
   slice(dur) {
     if (!this.ready()) return;
     const t = this.ac.currentTime;
-    // the knife dragging through sand: a soft scrape that sweeps down
     const src = this.ac.createBufferSource();
     src.buffer = this.noise;
     const f = this.ac.createBiquadFilter();
@@ -222,34 +356,30 @@ const sfx = {
     f.frequency.exponentialRampToValueAtTime(1100, t + dur);
     const g = this.ac.createGain();
     g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(0.35, t + 0.03);
+    g.gain.exponentialRampToValueAtTime(0.33, t + 0.03);
     g.gain.exponentialRampToValueAtTime(0.0001, t + dur + 0.08);
     src.connect(f).connect(g).connect(this.master);
     src.start(t, rand(0, 1)); src.stop(t + dur + 0.1);
-    // crisp crunches sprinkled along the cut
-    const count = Math.round(18 + dur * 60);
-    for (let i = 0; i < count; i++) {
-      this.grain(t + rand(0, dur), rand(0.012, 0.04), rand(2500, 7500), rand(1.5, 4), rand(0.08, 0.28));
+    for (let i = 0, n = Math.round(18 + dur * 60); i < n; i++) {
+      this.grain(t + rand(0, dur), rand(0.012, 0.04), rand(2500, 7500), rand(1.5, 4), rand(0.08, 0.26));
     }
   },
 
   crumble(size) {
     if (!this.ready()) return;
     const t = this.ac.currentTime;
-    const count = Math.round(clamp(size / 60, 30, 110));
-    for (let i = 0; i < count; i++) {
-      const k = Math.pow(Math.random(), 1.8); // denser at the start, trailing off
-      this.grain(t + k * 0.9, rand(0.015, 0.06), rand(700, 4200), rand(1, 3), rand(0.05, 0.22) * (1 - k * 0.6));
+    for (let i = 0, n = Math.round(clamp(size / 60, 30, 110)); i < n; i++) {
+      const k = Math.pow(Math.random(), 1.8);
+      this.grain(t + k * 0.9, rand(0.015, 0.06), rand(700, 4200), rand(1, 3), rand(0.05, 0.2) * (1 - k * 0.6));
     }
-    // a soft low "fwump" of the chunk giving way
-    this.grain(t, 0.25, 160, 0.7, 0.35, "lowpass");
+    this.grain(t, 0.25, 160, 0.7, 0.32, "lowpass");
   },
 
   settle(n) {
     if (!this.ready() || n <= 0) return;
     const t = this.ac.currentTime;
     for (let i = 0; i < Math.min(n, 4); i++) {
-      this.grain(t + rand(0, 0.03), rand(0.008, 0.02), rand(4000, 9000), 2, 0.03 + Math.min(n, 20) * 0.003);
+      this.grain(t + rand(0, 0.03), rand(0.008, 0.02), rand(4000, 9000), 2, 0.025 + Math.min(n, 20) * 0.003);
     }
   },
 
@@ -257,106 +387,171 @@ const sfx = {
     if (!this.ready()) return;
     const t = this.ac.currentTime;
     const base = [523.25, 587.33, 659.25, 783.99, 880][clamp(level, 0, 4)];
-    for (const [mult, gain, delay] of [[1, 0.16, 0], [1.5, 0.08, 0.06], [2, 0.05, 0.12]]) {
-      const o = this.ac.createOscillator();
-      o.type = "sine"; o.frequency.value = base * mult;
-      const g = this.ac.createGain();
-      g.gain.setValueAtTime(0.0001, t + delay);
-      g.gain.exponentialRampToValueAtTime(gain, t + delay + 0.02);
-      g.gain.exponentialRampToValueAtTime(0.0001, t + delay + 1.4);
-      o.connect(g).connect(this.master);
-      o.start(t + delay); o.stop(t + delay + 1.5);
-    }
+    this.tone(t, base, 0.14, 1.4);
+    this.tone(t + 0.06, base * 1.5, 0.07, 1.3);
+    this.tone(t + 0.12, base * 2, 0.045, 1.2);
+  },
+
+  pop() {
+    if (!this.ready()) return;
+    const t = this.ac.currentTime;
+    this.tone(t, 820, 0.28, 0.16, "sine", 160);
+    this.grain(t, 0.03, 3200, 1.2, 0.25);
+  },
+
+  clink() {
+    if (!this.ready()) return;
+    const t = this.ac.currentTime;
+    this.tone(t, 2637, 0.07, 1.6);
+    this.tone(t + 0.002, 3951, 0.045, 1.2);
+    this.tone(t + 0.004, 5274, 0.025, 0.9);
   },
 
   whoosh() {
     if (!this.ready()) return;
-    this.grain(this.ac.currentTime, 0.18, 900, 0.6, 0.08);
+    this.grain(this.ac.currentTime, 0.18, 900, 0.6, 0.07);
   },
 };
+
+// ---------- layout ----------
+
+const cvs = $("c");
+const ctx = cvs.getContext("2d");
+let W = 0, H = 0, DPR = 1;
+const L = {}; // scene layout
+
+const PALETTES = [
+  ["#f7b2c4", "#fbd5a5", "#fdf0b2"],
+  ["#cdb4f0", "#f7b2c4", "#ffd9e8"],
+  ["#9fd8cb", "#bfe8f3", "#e3f6ff"],
+  ["#ffafcc", "#ffc8dd", "#fff0f5"],
+  ["#f9d5a7", "#f6b4a0", "#e98fa5"],
+  ["#b5ead7", "#e2f0cb", "#fff6c9"],
+  ["#a9c7ff", "#c7ceea", "#e8e0ff"],
+  ["#ffd6a5", "#fdffb6", "#caffbf"],
+];
+const SEAM = "#fff6ee";
+const COL_W = 3;
+const NAMES_A = ["Lavender", "Peach", "Moonlit", "Velvet", "Honey", "Misty", "Rosy", "Sea-glass", "Dusk", "Cloud", "Opal", "Saffron"];
+const NAMES_B = ["Dunes", "Garden", "Tide", "Bloom", "Drift", "Hush", "Morning", "Reverie", "Meadow", "Lagoon", "Lullaby", "Shore"];
+
+function computeLayout() {
+  const top = 112;
+  const safeBottom = 34;
+  L.jw = clamp(Math.min(W * 0.5, 230), 150, 230);
+  L.jh = L.jw * 1.12;
+  L.jcx = W / 2;
+  L.jBottom = H - safeBottom - 18;
+  L.jTop = L.jBottom - L.jh;
+  L.jx0 = L.jcx - L.jw / 2;
+  L.neckH = L.jh * 0.13;
+  L.mouthW = L.jw * 0.6;
+  L.wall = 4;
+  L.pedY = L.jTop - 64;
+  L.bw = clamp(Math.min(W * 0.56, 280), 160, 280);
+  L.bh = clamp(Math.min(L.bw * 0.82, L.pedY - top - 12), 110, 240);
+  L.bx0 = L.jcx - L.bw / 2;
+  L.by0 = L.pedY - L.bh;
+  L.funnelTop = L.pedY + 22;
+  L.funnelTopHW = L.bw / 2 + 30;
+  L.funnelBotHW = L.mouthW / 2 - L.wall - 2;
+  L.innerHW = L.jw / 2 - L.wall - 1;
+  L.innerBottom = L.jBottom - L.wall - 1;
+  L.bodyTop = L.jTop + L.neckH;
+}
+
+function resize() {
+  const oldW = W, oldH = H;
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  W = window.innerWidth; H = window.innerHeight;
+  cvs.width = Math.round(W * DPR); cvs.height = Math.round(H * DPR);
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  if (oldW === W && Math.abs(oldH - H) < 120 && game.jar) return; // ignore tiny mobile toolbar changes
+  computeLayout();
+  makeOrbs();
+  newJar(false);
+  newBlock(false);
+}
 
 // ---------- game state ----------
 
 const game = {
-  started: false,
-  score: 0,
-  combo: 0,
-  block: null,      // { poly, startArea, tex, texData, x0, y0, enter }
-  guide: null,      // { p, d }
-  pieces: [],       // falling chunks before they crumble
-  particles: [],    // loose grains of sand
-  floaters: [],     // floating rating texts
-  glints: [],       // shimmer along fresh cuts
-  trail: [],        // recent pointer positions
-  clearing: false,
+  mode: "menu",
+  score: 0, shownScore: 0, combo: 0,
+  block: null, guide: null,
+  pieces: [], particles: [], sparks: [], floaters: [], glints: [], trail: [],
+  jar: null, clearing: false, time: 0,
 };
 window.__game = game; // handy for debugging in the console
 
-const COL_W = 3;
-const SEAM = "#fbf1e6";
-let heap = [], pile = null, pileCtx = null, pileFade = 0;
+// ---------- background orbs ----------
 
-function resetPile() {
-  heap = new Array(Math.ceil(W / COL_W) + 1).fill(0);
-  pile = document.createElement("canvas");
-  pile.width = Math.round(W * DPR);
-  pile.height = Math.round(H * DPR);
-  pileCtx = pile.getContext("2d");
-  pileCtx.setTransform(DPR, 0, 0, DPR, 0, 0);
+let orbs = [];
+function orbSprite(r, color) {
+  const c = document.createElement("canvas");
+  c.width = c.height = Math.ceil(r * 2 * DPR);
+  const o = c.getContext("2d");
+  o.scale(DPR, DPR);
+  const g = o.createRadialGradient(r * 0.7, r * 0.6, r * 0.05, r, r, r);
+  g.addColorStop(0, "rgba(255,255,255,.9)");
+  g.addColorStop(0.18, color);
+  g.addColorStop(1, "rgba(255,255,255,0)");
+  o.fillStyle = g;
+  o.beginPath(); o.arc(r, r, r, 0, Math.PI * 2); o.fill();
+  o.strokeStyle = "rgba(255,255,255,.25)";
+  o.lineWidth = 1;
+  o.beginPath(); o.arc(r, r, r * 0.82, Math.PI * 1.05, Math.PI * 1.45); o.stroke();
+  return c;
+}
+function makeOrbs() {
+  const colors = ["rgba(245,163,199,.55)", "rgba(185,162,255,.55)", "rgba(143,211,255,.5)", "rgba(255,214,165,.5)"];
+  orbs = Array.from({ length: Math.round(clamp(W * H / 60000, 8, 18)) }, () => {
+    const r = rand(18, 70);
+    return { x: rand(0, W), y: rand(0, H), r, vy: rand(4, 12), sway: rand(0, 6.28), a: rand(0.12, 0.35), sprite: orbSprite(r, pick(colors)) };
+  });
 }
 
-/** Paint the wavy pastel layers and the sand grain texture of a new block. */
+// ---------- sand block ----------
+
 function makeTexture(w, h, palette) {
   const tex = document.createElement("canvas");
   tex.width = Math.round(w * DPR); tex.height = Math.round(h * DPR);
   const t = tex.getContext("2d");
   t.setTransform(DPR, 0, 0, DPR, 0, 0);
-  // cream base shows through as thin seams between the layers
   t.fillStyle = SEAM;
   t.fillRect(0, 0, w, h);
-  const bandH = rand(18, 30);
-  const bands = Math.ceil(h / bandH) + 2;
+  const bandH = rand(20, 32), bands = Math.ceil(h / bandH) + 2;
   const phase = rand(0, 10), freq = rand(0.015, 0.03), amp = bandH * rand(0.2, 0.45);
-  for (let x = 0; x < w; x += 1) {
+  for (let x = 0; x < w; x++) {
     for (let b = -1; b < bands; b++) {
-      const y = b * bandH + Math.sin(x * freq + phase + b * 0.7) * amp;
       t.fillStyle = palette[(b + palette.length * 4) % palette.length];
-      t.fillRect(x, y, 1.2, bandH + 1);
+      t.fillRect(x, b * bandH + Math.sin(x * freq + phase + b * 0.7) * amp, 1.2, bandH - 1.2);
     }
   }
-  // grain: tiny light and dark specks make it read as sand
-  const specks = Math.round(w * h / 5);
-  for (let i = 0; i < specks; i++) {
-    t.fillStyle = Math.random() < 0.5 ? "rgba(255,255,255,0.22)" : "rgba(80,50,70,0.08)";
+  for (let i = 0, n = Math.round(w * h / 5); i < n; i++) {
+    t.fillStyle = Math.random() < 0.5 ? "rgba(255,255,255,0.25)" : "rgba(80,50,70,0.07)";
     t.fillRect(Math.random() * w, Math.random() * h, rand(0.6, 1.4), rand(0.6, 1.4));
   }
   return { tex, data: t.getImageData(0, 0, tex.width, tex.height).data, texW: tex.width };
 }
 
 function newBlock(animate = true) {
-  const bw = Math.min(W * 0.62, 320);
-  const bh = Math.min(bw * 0.95, floorY - 150);
-  const x0 = (W - bw) / 2, y0 = floorY - bh;
-  const palette = [...PALETTES[Math.floor(Math.random() * PALETTES.length)]].sort(() => Math.random() - 0.5);
-  const { tex, data, texW } = makeTexture(bw, bh, palette);
-  const poly = roundedRect(x0, y0, bw, bh, 18);
-  game.block = { poly, startArea: area(poly), tex, texData: data, texW, x0, y0, enter: animate ? 1 : 0 };
+  const palette = [...pick(PALETTES)].sort(() => Math.random() - 0.5);
+  const { tex, data, texW } = makeTexture(L.bw, L.bh, palette);
+  const poly = roundedRect(L.bx0, L.by0, L.bw, L.bh, 20);
+  game.block = { poly, startArea: area(poly), tex, texData: data, texW, x0: L.bx0, y0: L.by0, enterT: animate ? 0 : 1 };
   game.clearing = false;
   newGuide();
 }
 
-/** Pick a fresh dotted line that shaves 15–30% off one side (or the top) of the block. */
+/** A fresh guide line that shaves 15–30% off one side (or the top) of the block. */
 function newGuide() {
-  const b = game.block, poly = b.poly, c = centroid(poly);
-  const box = bbox(poly);
-  const fromTop = Math.random() < 0.25 && box.y1 - box.y0 > 120;
-  if (fromTop) {
-    const y = box.y0 + (box.y1 - box.y0) * rand(0.18, 0.3);
+  const poly = game.block.poly, c = centroid(poly), box = bbox(poly);
+  if (Math.random() < 0.22 && box.y1 - box.y0 > 110) {
     const a = rand(-0.25, 0.25);
-    game.guide = { p: [c[0], y], d: norm([Math.cos(a), Math.sin(a)]) };
+    game.guide = { p: [c[0], box.y0 + (box.y1 - box.y0) * rand(0.18, 0.3)], d: norm([Math.cos(a), Math.sin(a)]) };
   } else {
-    const { cut } = split(poly, [box.x0 - 10, c[1]], [1, 0]);
-    const xs = cut.map(p => p[0]).sort((m, n) => m - n);
+    const xs = split(poly, [box.x0 - 10, c[1]], [1, 0]).cut.map(p => p[0]).sort((m, n) => m - n);
     const [xl, xr] = xs.length >= 2 ? [xs[0], xs[xs.length - 1]] : [box.x0, box.x1];
     const f = Math.random() < 0.5 ? rand(0.16, 0.3) : rand(0.7, 0.84);
     const a = rand(-0.4, 0.4);
@@ -368,92 +563,275 @@ function sampleColor(b, p) {
   const x = Math.round((p[0] - b.x0) * DPR), y = Math.round((p[1] - b.y0) * DPR);
   const i = (clamp(y, 0, b.tex.height - 1) * b.texW + clamp(x, 0, b.texW - 1)) * 4;
   const d = b.texData;
-  if (d[i + 3] < 200) return SEAM;
-  return `rgb(${d[i]},${d[i + 1]},${d[i + 2]})`;
+  return d[i + 3] < 200 ? SEAM : `rgb(${d[i]},${d[i + 1]},${d[i + 2]})`;
+}
+
+// ---------- the jar ----------
+
+function newJar(animate = true) {
+  const sand = document.createElement("canvas");
+  sand.width = Math.round(L.jw * DPR); sand.height = Math.round(L.jh * DPR);
+  const sctx = sand.getContext("2d");
+  sctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  const cols = Math.ceil((L.innerHW * 2) / COL_W);
+  // the rounded bottom of the jar starts each edge column a little higher
+  const r = L.jw * 0.16;
+  const heap = Array.from({ length: cols }, (_, i) => {
+    const x = i * COL_W + COL_W / 2, fromEdge = Math.min(x, L.innerHW * 2 - x);
+    return fromEdge < r ? r - Math.sqrt(Math.max(0, r * r - (r - fromEdge) ** 2)) : 0;
+  });
+  game.jar = {
+    sand, sctx, heap, cols, state: animate ? "entering" : "filling", t: 0,
+    cork: 0, sweep: -1, name: `${pick(NAMES_A)} ${pick(NAMES_B)}`,
+    stats: { cuts: 0, precise: 0, calm: 0, start: performance.now() },
+  };
+}
+
+function jarFill() {
+  const j = game.jar;
+  const depth = L.innerBottom - L.bodyTop - 8;
+  return clamp(j.heap.reduce((s, h) => s + h, 0) / j.heap.length / depth, 0, 1);
+}
+
+/** Outline of the jar: a neck, soft shoulders and a rounded bottom. */
+function jarPath(c, x, y, w, h, neckH, mouthW, close = true) {
+  const ml = x + (w - mouthW) / 2, mr = ml + mouthW, bt = y + neckH, r = w * 0.16;
+  c.beginPath();
+  c.moveTo(ml, y);
+  c.lineTo(ml, bt - 6);
+  c.quadraticCurveTo(ml, bt + 4, x + r * 0.5, bt + 8);
+  c.quadraticCurveTo(x, bt + 10, x, bt + 10 + r * 0.6);
+  c.lineTo(x, y + h - r);
+  c.quadraticCurveTo(x, y + h, x + r, y + h);
+  c.lineTo(x + w - r, y + h);
+  c.quadraticCurveTo(x + w, y + h, x + w, y + h - r);
+  c.lineTo(x + w, bt + 10 + r * 0.6);
+  c.quadraticCurveTo(x + w, bt + 10, x + w - r * 0.5, bt + 8);
+  c.quadraticCurveTo(mr, bt + 4, mr, bt - 6);
+  c.lineTo(mr, y);
+  if (close) c.closePath();
+}
+
+/** Draw the jar at (x, y): sand inside, then glass, highlights and the cork on top. */
+function drawJar(c, x, y, j, time) {
+  const { jw, jh, neckH, mouthW, wall } = L;
+  // sand, clipped to the inside of the glass
+  c.save();
+  jarPath(c, x + wall, y, jw - wall * 2, jh - wall, neckH, mouthW - wall * 2);
+  c.clip();
+  c.drawImage(j.sand, x, y, jw, jh);
+  c.restore();
+
+  // glass body: brighter at the edges, like a real curved jar
+  const g = c.createLinearGradient(x, 0, x + jw, 0);
+  g.addColorStop(0, "rgba(255,255,255,.26)");
+  g.addColorStop(0.12, "rgba(255,255,255,.07)");
+  g.addColorStop(0.5, "rgba(255,255,255,.025)");
+  g.addColorStop(0.88, "rgba(255,255,255,.07)");
+  g.addColorStop(1, "rgba(255,255,255,.22)");
+  jarPath(c, x, y, jw, jh, neckH, mouthW);
+  c.fillStyle = g;
+  c.fill();
+  c.save();
+  c.clip();
+  c.strokeStyle = "rgba(255,255,255,.14)";
+  c.lineWidth = 10;
+  jarPath(c, x, y, jw, jh, neckH, mouthW);
+  c.stroke();
+
+  // long highlight on the left, a thin one on the right
+  const hl = c.createLinearGradient(0, y + neckH, 0, y + jh);
+  hl.addColorStop(0, "rgba(255,255,255,.55)");
+  hl.addColorStop(1, "rgba(255,255,255,.04)");
+  c.fillStyle = hl;
+  roundRect(c, x + jw * 0.1, y + neckH + jw * 0.12, jw * 0.06, jh - neckH - jw * 0.28, jw * 0.03);
+  c.fill();
+  c.fillStyle = "rgba(255,255,255,.22)";
+  roundRect(c, x + jw * 0.85, y + neckH + jw * 0.2, jw * 0.025, jh * 0.38, jw * 0.012);
+  c.fill();
+
+  // a band of light that sweeps across the glass when the jar is finished
+  if (j.sweep >= 0 && j.sweep <= 1) {
+    const sx = lerp(x - jw * 0.6, x + jw * 1.4, j.sweep);
+    const s = c.createLinearGradient(sx - 40, y, sx + 40, y + 60);
+    s.addColorStop(0, "rgba(255,255,255,0)");
+    s.addColorStop(0.5, "rgba(255,255,255,.55)");
+    s.addColorStop(1, "rgba(255,255,255,0)");
+    c.fillStyle = s;
+    c.fillRect(x, y, jw, jh);
+  }
+  c.restore();
+
+  jarPath(c, x, y, jw, jh, neckH, mouthW, false);
+  c.strokeStyle = "rgba(255,255,255,.6)";
+  c.lineWidth = 1.6;
+  c.stroke();
+  // rim of the mouth
+  c.beginPath();
+  c.ellipse(x + jw / 2, y, mouthW / 2 + 2, 4.5, 0, 0, Math.PI * 2);
+  c.fillStyle = "rgba(255,255,255,.08)";
+  c.fill();
+  c.strokeStyle = "rgba(255,255,255,.7)";
+  c.lineWidth = 1.4;
+  c.stroke();
+
+  if (j.cork > 0) drawCork(c, x + jw / 2, y, j.cork, mouthW, neckH);
+}
+
+function drawCork(c, cx, mouthY, k, mouthW, neckH) {
+  const cw = mouthW + 6, ch = neckH * 0.85;
+  const restY = mouthY - ch * 0.35;
+  const yy = lerp(restY - 120, restY, easeOutBounce(clamp(k, 0, 1)));
+  c.save();
+  c.globalAlpha = clamp(k * 4, 0, 1);
+  const g = c.createLinearGradient(cx - cw / 2, 0, cx + cw / 2, 0);
+  g.addColorStop(0, "#b8875c");
+  g.addColorStop(0.35, "#e2b98e");
+  g.addColorStop(1, "#9c6f49");
+  c.fillStyle = g;
+  roundRect(c, cx - cw / 2, yy, cw, ch, 6);
+  c.fill();
+  c.fillStyle = "rgba(90,55,30,.35)";
+  for (let i = 0; i < 14; i++) {
+    const px = cx - cw / 2 + 5 + ((i * 37) % (cw - 10)), py = yy + 4 + ((i * 53) % Math.max(4, ch - 8));
+    c.fillRect(px, py, 1.6, 1.6);
+  }
+  c.beginPath();
+  c.ellipse(cx, yy, cw / 2, 4, 0, 0, Math.PI * 2);
+  c.fillStyle = "#f0cfa8";
+  c.fill();
+  c.restore();
+}
+
+function roundRect(c, x, y, w, h, r) {
+  c.beginPath();
+  c.moveTo(x + r, y);
+  c.arcTo(x + w, y, x + w, y + h, r);
+  c.arcTo(x + w, y + h, x, y + h, r);
+  c.arcTo(x, y + h, x, y, r);
+  c.arcTo(x, y, x + w, y, r);
+  c.closePath();
+}
+
+/** Bake one landed grain into the jar's sand. */
+function bakeGrain(g) {
+  const j = game.jar;
+  let col = clamp(Math.floor((g.x - (L.jcx - L.innerHW)) / COL_W), 0, j.cols - 1);
+  for (let k = 0; k < 40; k++) {
+    const l = j.heap[col - 1] ?? Infinity, r = j.heap[col + 1] ?? Infinity;
+    if (Math.min(l, r) < j.heap[col] - g.s * 0.7) col += (l < r || (l === r && Math.random() < 0.5)) ? -1 : 1;
+    else break;
+  }
+  const inc = g.s * 0.6;
+  const lx = (L.jcx - L.innerHW) + col * COL_W - L.jx0;
+  const ly = L.innerBottom - j.heap[col] - inc - L.jTop;
+  j.sctx.fillStyle = g.color;
+  j.sctx.fillRect(lx + rand(-0.6, 0.6), ly, COL_W + 1.2, inc + 0.9);
+  if (g.glitter) {
+    j.sctx.fillStyle = "rgba(255,255,255,.95)";
+    j.sctx.fillRect(lx + 1, ly, 1.4, 1.4);
+  }
+  j.heap[col] += inc;
 }
 
 // ---------- cutting ----------
 
+function breath(time) {
+  const phase = (time % 8000) / 8000;
+  return { k: 0.5 - 0.5 * Math.cos(phase * Math.PI * 2), exhale: phase >= 0.5 };
+}
+
 function tryCut(start, end, durSec) {
-  const b = game.block;
-  if (!b || b.enter > 0 || game.clearing) return;
+  const b = game.block, j = game.jar;
+  if (game.mode !== "play" || !b || b.enterT < 1 || game.clearing || j.state !== "filling") return;
   const d = sub(end, start);
   if (len(d) < 40) return;
   const dn = norm(d);
   const { left, right, cut } = split(b.poly, start, dn);
-
-  // the swipe has to actually travel across the block, not just point at it
   const along = cut.map(q => dot(sub(q, start), d) / dot(d, d));
   const crosses = cut.length >= 2 && along.every(t => t > -0.15 && t < 1.15);
   if (!crosses || area(left) < 150 || area(right) < 150) { sfx.whoosh(); return; }
 
   const [keep, drop] = area(left) >= area(right) ? [left, right] : [right, left];
 
-  // how close was the swipe to the dotted line?
   const g = game.guide;
   const gcut = split(b.poly, g.p, g.d).cut;
   const gmid = gcut.length >= 2 ? [(gcut[0][0] + gcut[1][0]) / 2, (gcut[0][1] + gcut[1][1]) / 2] : g.p;
   const angle = Math.acos(clamp(Math.abs(dot(dn, g.d)), 0, 1)) * 180 / Math.PI;
   const offset = Math.abs(cross(dn, sub(gmid, start)));
   const precision = clamp(100 - angle * 2 - offset * 0.7, 0, 100);
-  rate(precision, gmid);
+  rate(precision, gmid, breath(game.time).exhale);
 
   b.poly = keep;
   spawnPiece(drop, keep);
   game.glints.push({ a: cut[0], b: cut[1], t: 0 });
+  burst(gmid[0], gmid[1], 6, ["#fff", "#ffe3f1"]);
   sfx.slice(clamp(durSec, 0.12, 0.5));
   if (navigator.vibrate) navigator.vibrate(10);
+  document.body.classList.add("cut-once");
 
   if (area(keep) < b.startArea * 0.3) {
-    // the last bit of the block collapses too, then a new one slides in
     game.clearing = true;
     setTimeout(() => {
       spawnPiece(b.poly, null);
       b.poly = [];
-      floatText("Block cleared!", [W / 2, floorY - 160], "#b48ee6");
+      floatText("block cleared ✦", [W / 2, L.by0 + L.bh / 2], "#ffd6e8", 22);
       game.score += 250;
-      setTimeout(() => { pileFade = 1; newBlock(true); }, 1500);
-    }, 450);
+      setTimeout(() => newBlock(true), 1300);
+    }, 420);
   } else {
     newGuide();
   }
 }
 
-function rate(precision, at) {
+function rate(precision, at, calm) {
+  const s = game.jar.stats;
   let label, color, points, level;
-  if (precision >= 90) { label = "Perfect!"; color = "#e07aa3"; points = 100; level = 4; }
-  else if (precision >= 72) { label = "Great"; color = "#9b7be0"; points = 60; level = 2; }
-  else if (precision >= 45) { label = "Good"; color = "#6aa9d8"; points = 30; level = 0; }
-  else { label = "Nice"; color = "#8a7d96"; points = 10; level = -1; }
-
+  if (precision >= 90) { label = "Perfect"; color = "#ffb3d4"; points = 100; level = 4; }
+  else if (precision >= 72) { label = "Great"; color = "#d3c2ff"; points = 60; level = 2; }
+  else if (precision >= 45) { label = "Good"; color = "#a8dcff"; points = 30; level = 0; }
+  else { label = "Nice"; color = "#f3e9f1"; points = 10; level = -1; }
+  s.cuts++;
+  if (precision >= 72) s.precise++;
   game.combo = precision >= 72 ? game.combo + 1 : 0;
-  const mult = 1 + Math.min(game.combo, 10) * 0.1;
-  game.score += Math.round(points * mult);
+  game.score += Math.round(points * (1 + Math.min(game.combo, 10) * 0.1));
   if (level >= 0) sfx.chime(Math.min(level + Math.floor(game.combo / 3), 4));
-  floatText(game.combo >= 2 ? `${label} ×${game.combo}` : label, [at[0], at[1] - 30], color);
+  floatText(game.combo >= 2 ? `${label} ×${game.combo}` : label, [at[0], at[1] - 34], color, 26);
+  if (calm) {
+    s.calm++;
+    game.score += 20;
+    floatText("calm ✦ +20", [at[0], at[1] + 2], "#bfe8ff", 15);
+  }
 }
 
-function floatText(text, at, color) {
-  game.floaters.push({ text, x: at[0], y: at[1], color, t: 0 });
+function floatText(text, at, color, size) {
+  game.floaters.push({ text, x: at[0], y: at[1], color, size, t: 0 });
+}
+
+function burst(x, y, n, colors) {
+  for (let i = 0; i < n; i++) {
+    const a = rand(0, Math.PI * 2), v = rand(40, 160);
+    game.sparks.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v - 40, t: 0, life: rand(0.5, 1), s: rand(3, 7), color: pick(colors) });
+  }
 }
 
 function spawnPiece(poly, keep) {
   if (!poly || poly.length < 3) return;
   const c = centroid(poly);
-  const away = keep ? norm(sub(c, centroid(keep))) : [0, 0];
+  let away = keep ? norm(sub(c, centroid(keep))) : [0, 0];
+  if (keep && Math.abs(away[0]) < 0.5) away = [away[0] >= 0 ? 1 : -1, away[1]]; // top slices slide off sideways
   game.pieces.push({
     poly, c, block: game.block,
-    dx: 0, dy: 0, vx: away[0] * 70, vy: -20 + away[1] * 40,
-    rot: 0, vrot: away[0] * rand(0.4, 1.1), t: 0,
-    life: keep ? rand(0.3, 0.45) : 0.15,
+    dx: 0, dy: 0, vx: away[0] * 80, vy: -20 + away[1] * 30,
+    rot: 0, vrot: away[0] * rand(0.5, 1.2), t: 0,
+    life: keep ? rand(0.32, 0.45) : 0.15,
   });
 }
 
 /** Break a chunk into grains that keep its colors and motion. */
 function crumble(piece) {
   const { poly, c, block } = piece;
-  const box = bbox(poly);
-  const a = area(poly);
+  const box = bbox(poly), a = area(poly);
   const n = Math.round(clamp(a / 14, 40, 1400));
   const cos = Math.cos(piece.rot), sin = Math.sin(piece.rot);
   let made = 0, tries = 0;
@@ -462,14 +840,15 @@ function crumble(piece) {
     const p = [rand(box.x0, box.x1), rand(box.y0, box.y1)];
     if (!inside(poly, p)) continue;
     const rx = p[0] - c[0], ry = p[1] - c[1];
-    const wx = c[0] + piece.dx + rx * cos - ry * sin;
-    const wy = c[1] + piece.dy + rx * sin + ry * cos;
+    const glitter = Math.random() < 0.05;
     game.particles.push({
-      x: wx, y: wy,
-      vx: piece.vx * rand(0.6, 1.2) + rand(-40, 40) + rx * rand(0.5, 1.5),
+      x: c[0] + piece.dx + rx * cos - ry * sin,
+      y: c[1] + piece.dy + rx * sin + ry * cos,
+      vx: piece.vx * rand(0.5, 1.1) + rand(-35, 35) + rx * rand(0.4, 1.2),
       vy: piece.vy * rand(0.6, 1.1) + rand(-30, 10),
       s: rand(1.6, 3.2),
-      color: sampleColor(block, p),
+      color: glitter ? "#fffdf6" : sampleColor(block, p),
+      glitter, tw: rand(0, 6.28),
     });
     made++;
   }
@@ -479,50 +858,119 @@ function crumble(piece) {
 // ---------- input ----------
 
 let pointer = null;
-
 cvs.addEventListener("pointerdown", e => {
-  if (!game.started) return;
+  if (game.mode !== "play") return;
   cvs.setPointerCapture(e.pointerId);
   pointer = { start: [e.clientX, e.clientY], t0: performance.now() };
   game.trail = [{ x: e.clientX, y: e.clientY, t: performance.now() }];
 });
-
 cvs.addEventListener("pointermove", e => {
-  if (!pointer) return;
-  game.trail.push({ x: e.clientX, y: e.clientY, t: performance.now() });
+  if (pointer) game.trail.push({ x: e.clientX, y: e.clientY, t: performance.now() });
 });
-
-const endSwipe = e => {
+cvs.addEventListener("pointerup", e => {
   if (!pointer) return;
-  const dur = (performance.now() - pointer.t0) / 1000;
-  tryCut(pointer.start, [e.clientX, e.clientY], dur);
+  tryCut(pointer.start, [e.clientX, e.clientY], (performance.now() - pointer.t0) / 1000);
   pointer = null;
-  document.getElementById("hint").style.opacity = 0;
-};
-cvs.addEventListener("pointerup", endSwipe);
+});
 cvs.addEventListener("pointercancel", () => { pointer = null; });
 
-document.getElementById("play").addEventListener("click", () => {
+// ---------- screens ----------
+
+const show = (id, on) => $(id).classList.toggle("hidden", !on);
+
+$("play").addEventListener("click", () => {
   sfx.init();
   if (sfx.ac && sfx.ac.state === "suspended") sfx.ac.resume();
-  document.getElementById("start").classList.add("hidden");
-  game.started = true;
+  show("start", false);
+  document.body.classList.add("playing");
+  game.mode = "play";
+  game.jar.stats.start = performance.now();
   newBlock(true);
 });
 
-const muteBtn = document.getElementById("mute");
-muteBtn.addEventListener("click", () => {
-  sfx.muted = !sfx.muted;
-  muteBtn.textContent = sfx.muted ? "🔇" : "🔊";
+$("mute").addEventListener("click", () => {
+  sfx.setMuted(!sfx.muted);
+  $("mute").textContent = sfx.muted ? "🔇" : "🔊";
 });
+
+$("nextJar").addEventListener("click", () => {
+  show("done", false);
+  game.mode = "play";
+  game.jar.state = "leaving";
+  game.jar.t = 0;
+});
+
+for (const id of ["shelfBtn", "doneShelf", "startShelf"]) $(id).addEventListener("click", openShelf);
+$("closeShelf").addEventListener("click", () => {
+  show("shelf", false);
+  if (game.mode === "menu") show("start", true);
+  else if (game.jar.state === "done") show("done", true);
+});
+
+function shelf() { return store.get("crumble.shelf", []); }
+
+function openShelf() {
+  const jars = shelf();
+  show("start", false); show("done", false);
+  $("shelfSub").textContent = jars.length
+    ? `${jars.length} jar${jars.length > 1 ? "s" : ""} of calm, made by you`
+    : "";
+  $("shelfGrid").innerHTML = jars.length
+    ? jars.slice().reverse().map((j, i) => `<figure style="animation-delay:${i * 40}ms"><img src="${j.img}" alt=""><figcaption>${j.name}<small>${new Date(j.date).toLocaleDateString()}</small></figcaption></figure>`).join("")
+    : `<div class="empty">Your finished jars will live here.<br>Fill your first one ✦</div>`;
+  show("shelf", true);
+}
+
+function updateShelfCount() {
+  const n = shelf().length;
+  $("shelfCount").textContent = n;
+  $("startShelf").hidden = n === 0;
+}
+
+/** Render the finished jar to a small image for the card and the shelf. */
+function jarImage() {
+  const s = 1.3, pad = 14, top = 40;
+  const c = document.createElement("canvas");
+  c.width = Math.round((L.jw + pad * 2) * s); c.height = Math.round((L.jh + top + pad) * s);
+  const o = c.getContext("2d");
+  o.scale(s, s);
+  drawJar(o, pad, top, { ...game.jar, sweep: -1, cork: 1 }, 0);
+  return c.toDataURL("image/png");
+}
+
+function finishJar() {
+  const j = game.jar, s = j.stats;
+  const img = jarImage();
+  const secs = Math.round((performance.now() - s.start) / 1000);
+  $("doneImg").src = img;
+  $("jarName").textContent = j.name;
+  $("stCuts").textContent = s.cuts;
+  $("stPerfect").textContent = s.cuts ? Math.round(s.precise / s.cuts * 100) + "%" : "–";
+  $("stCalm").textContent = s.calm;
+  $("stTime").textContent = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`;
+  const jars = shelf();
+  jars.push({ name: j.name, img, date: Date.now(), cuts: s.cuts, calm: s.calm });
+  while (jars.length > 30) jars.shift();
+  store.set("crumble.shelf", jars);
+  updateShelfCount();
+  game.mode = "done";
+  show("done", true);
+}
 
 // ---------- simulation ----------
 
-const GRAVITY = 1100;
+const GRAVITY = 1000;
+let settleAcc = 0, settleTimer = 0;
 
 function update(dt) {
-  const b = game.block;
-  if (b && b.enter > 0) b.enter = Math.max(0, b.enter - dt * 1.8);
+  game.time += dt * 1000;
+  const b = game.block, j = game.jar;
+  if (b && b.enterT < 1) b.enterT = Math.min(1, b.enterT + dt / 0.75);
+
+  for (const o of orbs) {
+    o.y -= o.vy * dt; o.sway += dt * 0.4;
+    if (o.y < -o.r * 2) { o.y = H + o.r; o.x = rand(0, W); }
+  }
 
   for (const p of game.pieces) {
     p.t += dt;
@@ -533,72 +981,76 @@ function update(dt) {
   for (const p of game.pieces.filter(p => p.t >= p.life)) crumble(p);
   game.pieces = game.pieces.filter(p => p.t < p.life);
 
+  // grains fall, slide down the glass funnel and settle in the jar
   let landed = 0;
   const still = [];
   for (const g of game.particles) {
     g.vy += GRAVITY * dt;
     g.vx *= 0.985;
     g.x += g.vx * dt; g.y += g.vy * dt;
-    if (g.y > H + 20) continue;
-    if (g.x < 0 || g.x >= W) { still.push(g); continue; }
-    let col = Math.floor(g.x / COL_W);
-    if (g.y + g.s >= floorY - heap[col]) {
-      // let grains roll down the side of the pile, like real sand
-      for (let k = 0; k < 6; k++) {
-        const l = heap[col - 1] ?? Infinity, r = heap[col + 1] ?? Infinity;
-        const lower = Math.min(l, r);
-        if (lower < heap[col] - g.s * 1.2) col += (l < r || (l === r && Math.random() < 0.5)) ? -1 : 1;
-        else break;
+    if (g.y >= L.funnelTop && g.y < L.jTop) {
+      const hw = lerp(L.funnelTopHW, L.funnelBotHW, (g.y - L.funnelTop) / (L.jTop - L.funnelTop));
+      if (Math.abs(g.x - L.jcx) > hw) {
+        g.x = L.jcx + Math.sign(g.x - L.jcx) * hw;
+        g.vx = -Math.sign(g.x - L.jcx) * (Math.abs(g.vx) * 0.25 + 30);
+        g.vy *= 0.9;
       }
-      const top = floorY - heap[col];
-      pileCtx.fillStyle = g.color;
-      pileCtx.fillRect(col * COL_W + rand(-1, 1), top - g.s, g.s + 0.6, g.s);
-      heap[col] += g.s * 0.42;
-      landed++;
-      continue;
+    } else if (g.y >= L.jTop) {
+      if (!g.poured) {
+        g.poured = true;
+        g.x = L.jcx + rand(-1, 1) * L.funnelBotHW * 0.9;
+        g.vx = rand(-1, 1) * L.innerHW * 1.6;
+      }
+      const hw = g.y < L.bodyTop ? L.funnelBotHW : L.innerHW - 1;
+      if (Math.abs(g.x - L.jcx) > hw) { g.x = L.jcx + Math.sign(g.x - L.jcx) * hw; g.vx *= -0.3; }
+      const col = clamp(Math.floor((g.x - (L.jcx - L.innerHW)) / COL_W), 0, j.cols - 1);
+      if (g.y + g.s >= L.innerBottom - j.heap[col]) {
+        if (j.state === "filling" || j.state === "corking") bakeGrain(g);
+        landed++;
+        continue;
+      }
     }
+    if (g.y > H + 20) continue;
     still.push(g);
   }
   game.particles = still;
-  if (landed) settleSound(landed);
-
-  if (pileFade > 0) {
-    pileFade = Math.max(0, pileFade - dt * 0.9);
-    if (pileFade === 0) resetPile();
+  if (landed) {
+    settleAcc += landed;
+    if (performance.now() - settleTimer > 45) { sfx.settle(settleAcc); settleAcc = 0; settleTimer = performance.now(); }
   }
 
+  // the jar's little life cycle
+  j.t += dt;
+  if (j.state === "entering" && j.t > 0.6) { j.state = "filling"; j.t = 0; }
+  if (j.state === "filling" && jarFill() >= 0.8) { j.state = "corking"; j.t = 0; }
+  if (j.state === "corking") {
+    j.cork = clamp(j.t / 0.9, 0, 1);
+    if (j.t >= 0.62 && !j.popped) {
+      j.popped = true;
+      sfx.pop();
+      burst(L.jcx, L.jTop - 10, 26, ["#fff", "#ffd6e8", "#d3c2ff", "#bfe8ff", "#ffe8b0"]);
+    }
+    if (j.t >= 0.9 && !j.clinked) { j.clinked = true; sfx.clink(); j.sweep = 0; }
+    if (j.sweep >= 0) j.sweep += dt / 0.9;
+    if (j.t >= 2) { j.state = "done"; finishJar(); }
+  }
+  if (j.state === "leaving" && j.t > 0.7) {
+    game.particles = [];
+    newJar(true);
+  }
+
+  for (const s of game.sparks) { s.t += dt; s.vy += 160 * dt; s.x += s.vx * dt; s.y += s.vy * dt; s.vx *= 0.97; }
+  game.sparks = game.sparks.filter(s => s.t < s.life);
   for (const f of game.floaters) f.t += dt;
-  game.floaters = game.floaters.filter(f => f.t < 1.2);
+  game.floaters = game.floaters.filter(f => f.t < 1.3);
   for (const g of game.glints) g.t += dt;
   game.glints = game.glints.filter(g => g.t < 0.6);
   const now = performance.now();
   game.trail = game.trail.filter(p => now - p.t < 220);
-}
-
-let settleAcc = 0, settleTimer = 0;
-function settleSound(n) {
-  settleAcc += n;
-  const now = performance.now();
-  if (now - settleTimer > 45) { sfx.settle(settleAcc); settleAcc = 0; settleTimer = now; }
+  game.shownScore = lerp(game.shownScore, game.score, Math.min(1, dt * 8));
 }
 
 // ---------- drawing ----------
-
-function drawBackground() {
-  const g = ctx.createLinearGradient(0, 0, 0, H);
-  g.addColorStop(0, "#f7eef4");
-  g.addColorStop(1, "#ece2f3");
-  ctx.fillStyle = g;
-  ctx.fillRect(0, 0, W, H);
-  // table
-  const t = ctx.createLinearGradient(0, floorY, 0, H);
-  t.addColorStop(0, "#efe1d6");
-  t.addColorStop(1, "#e4d2c6");
-  ctx.fillStyle = t;
-  ctx.fillRect(0, floorY, W, H - floorY);
-  ctx.fillStyle = "rgba(255,255,255,.6)";
-  ctx.fillRect(0, floorY, W, 1.5);
-}
 
 function pathOf(poly) {
   ctx.beginPath();
@@ -606,45 +1058,147 @@ function pathOf(poly) {
   ctx.closePath();
 }
 
-function drawBlock() {
-  const b = game.block;
-  if (!b || b.poly.length < 3) return;
-  const shift = b.enter > 0 ? Math.pow(b.enter, 2) * (W * 0.8) : 0;
+function drawBackground() {
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, "#1d1636");
+  g.addColorStop(0.55, "#43295f");
+  g.addColorStop(1, "#7d4672");
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, H);
+  const glow = ctx.createRadialGradient(W / 2, H * 0.95, 10, W / 2, H * 0.95, Math.max(W, H) * 0.6);
+  glow.addColorStop(0, "rgba(255,190,210,.35)");
+  glow.addColorStop(1, "rgba(255,190,210,0)");
+  ctx.fillStyle = glow;
+  ctx.fillRect(0, 0, W, H);
+  for (const o of orbs) {
+    ctx.globalAlpha = o.a;
+    ctx.drawImage(o.sprite, o.x + Math.sin(o.sway) * 14 - o.r, o.y - o.r, o.r * 2, o.r * 2);
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawBreathHalo() {
+  if (game.mode === "menu") return;
+  const { k } = breath(game.time);
+  const cx = L.jcx, cy = L.by0 + L.bh / 2, r = L.bw * (0.75 + k * 0.35);
+  const g = ctx.createRadialGradient(cx, cy, r * 0.2, cx, cy, r);
+  g.addColorStop(0, `rgba(255,214,232,${0.10 + k * 0.12})`);
+  g.addColorStop(1, "rgba(255,214,232,0)");
+  ctx.fillStyle = g;
+  ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
+}
+
+function drawFunnelAndPlate() {
+  const { jcx, funnelTop, funnelTopHW, funnelBotHW, jTop, pedY, bw } = L;
+  // glass funnel
   ctx.save();
-  ctx.translate(shift, 0);
-  // soft contact shadow
-  const box = bbox(b.poly);
-  ctx.fillStyle = "rgba(90,60,90,.10)";
   ctx.beginPath();
-  ctx.ellipse((box.x0 + box.x1) / 2, floorY + 4, (box.x1 - box.x0) / 2 + 10, 7, 0, 0, Math.PI * 2);
+  ctx.moveTo(jcx - funnelTopHW, funnelTop);
+  ctx.lineTo(jcx - funnelBotHW - 3, jTop - 2);
+  ctx.lineTo(jcx + funnelBotHW + 3, jTop - 2);
+  ctx.lineTo(jcx + funnelTopHW, funnelTop);
+  ctx.closePath();
+  const fg = ctx.createLinearGradient(jcx - funnelTopHW, 0, jcx + funnelTopHW, 0);
+  fg.addColorStop(0, "rgba(255,255,255,.16)");
+  fg.addColorStop(0.5, "rgba(255,255,255,.03)");
+  fg.addColorStop(1, "rgba(255,255,255,.13)");
+  ctx.fillStyle = fg;
   ctx.fill();
-  ctx.save();
-  pathOf(b.poly);
-  ctx.clip();
-  ctx.drawImage(b.tex, b.x0, b.y0, b.tex.width / DPR, b.tex.height / DPR);
-  // gentle top light
-  const l = ctx.createLinearGradient(0, box.y0, 0, box.y1);
-  l.addColorStop(0, "rgba(255,255,255,.18)");
-  l.addColorStop(1, "rgba(120,80,110,.08)");
-  ctx.fillStyle = l;
-  ctx.fillRect(box.x0, box.y0, box.x1 - box.x0, box.y1 - box.y0);
+  ctx.strokeStyle = "rgba(255,255,255,.5)";
+  ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  ctx.moveTo(jcx - funnelTopHW, funnelTop); ctx.lineTo(jcx - funnelBotHW - 3, jTop - 2);
+  ctx.moveTo(jcx + funnelTopHW, funnelTop); ctx.lineTo(jcx + funnelBotHW + 3, jTop - 2);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.ellipse(jcx, funnelTop, funnelTopHW, 6, 0, 0, Math.PI * 2);
+  ctx.strokeStyle = "rgba(255,255,255,.45)";
+  ctx.stroke();
   ctx.restore();
+
+  // glass plate the block sits on
+  ctx.save();
+  ctx.beginPath();
+  ctx.ellipse(jcx, pedY + 5, bw * 0.44, 8, 0, 0, Math.PI * 2);
+  ctx.fillStyle = "rgba(255,255,255,.18)";
+  ctx.fill();
+  ctx.strokeStyle = "rgba(255,255,255,.6)";
+  ctx.lineWidth = 1.2;
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.ellipse(jcx - bw * 0.1, pedY + 3, bw * 0.2, 2, 0, 0, Math.PI * 2);
+  ctx.fillStyle = "rgba(255,255,255,.45)";
+  ctx.fill();
   ctx.restore();
 }
 
-function drawGuide(time) {
+function blockOffset() {
+  const b = game.block;
+  return b.enterT >= 1 ? 0 : -(1 - easeOutBack(b.enterT)) * (L.by0 + L.bh + 40);
+}
+
+function drawTexturedPoly(poly, b) {
+  ctx.save();
+  pathOf(poly);
+  ctx.clip();
+  ctx.drawImage(b.tex, b.x0, b.y0, b.tex.width / DPR, b.tex.height / DPR);
+  ctx.restore();
+}
+
+function drawBlock() {
+  const b = game.block;
+  if (!b || b.poly.length < 3) return;
+  const box = bbox(b.poly);
+  ctx.save();
+  ctx.translate(0, blockOffset());
+  drawTexturedPoly(b.poly, b);
+  ctx.save();
+  pathOf(b.poly);
+  ctx.clip();
+  // soft inner shading and a slow glossy sheen
+  const l = ctx.createLinearGradient(0, box.y0, 0, box.y1);
+  l.addColorStop(0, "rgba(255,255,255,.22)");
+  l.addColorStop(0.4, "rgba(255,255,255,0)");
+  l.addColorStop(1, "rgba(80,30,80,.14)");
+  ctx.fillStyle = l;
+  ctx.fillRect(box.x0, box.y0, box.x1 - box.x0, box.y1 - box.y0);
+  const sheen = ((game.time % 6000) / 1600);
+  if (sheen <= 1) {
+    const sx = lerp(box.x0 - 80, box.x1 + 80, sheen);
+    const s = ctx.createLinearGradient(sx - 50, box.y0, sx + 50, box.y0 + 90);
+    s.addColorStop(0, "rgba(255,255,255,0)");
+    s.addColorStop(0.5, "rgba(255,255,255,.35)");
+    s.addColorStop(1, "rgba(255,255,255,0)");
+    ctx.fillStyle = s;
+    ctx.fillRect(box.x0, box.y0, box.x1 - box.x0, box.y1 - box.y0);
+  }
+  pathOf(b.poly);
+  ctx.strokeStyle = "rgba(90,40,90,.12)";
+  ctx.lineWidth = 8;
+  ctx.stroke();
+  ctx.restore();
+  pathOf(b.poly);
+  ctx.strokeStyle = "rgba(255,255,255,.35)";
+  ctx.lineWidth = 1.2;
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawGuide() {
   const b = game.block, g = game.guide;
-  if (!b || !g || b.enter > 0 || game.clearing) return;
+  if (game.mode !== "play" || !b || !g || b.enterT < 1 || game.clearing || game.jar.state !== "filling") return;
   const { cut } = split(b.poly, g.p, g.d);
   if (cut.length < 2) return;
-  const [a, c] = cut;
-  const ext = 16, d = norm(sub(c, a));
+  const [a, c] = cut, ext = 16, d = norm(sub(c, a));
+  const { k, exhale } = breath(game.time);
   ctx.save();
-  ctx.setLineDash([2, 8]);
   ctx.lineCap = "round";
-  ctx.lineDashOffset = -time * 0.02;
+  ctx.setLineDash([2, 9]);
+  ctx.lineDashOffset = -game.time * 0.02;
+  ctx.shadowColor = exhale ? "rgba(191,232,255,.95)" : "rgba(255,255,255,.9)";
+  ctx.shadowBlur = 8 + k * 10;
   ctx.lineWidth = 3;
-  ctx.strokeStyle = `rgba(255,255,255,${0.75 + Math.sin(time * 0.004) * 0.2})`;
+  ctx.strokeStyle = `rgba(255,255,255,${0.8 + k * 0.2})`;
   ctx.beginPath();
   ctx.moveTo(a[0] - d[0] * ext, a[1] - d[1] * ext);
   ctx.lineTo(c[0] + d[0] * ext, c[1] + d[1] * ext);
@@ -654,23 +1208,70 @@ function drawGuide(time) {
 
 function drawPieces() {
   for (const p of game.pieces) {
-    const b = p.block;
     ctx.save();
     ctx.translate(p.c[0] + p.dx, p.c[1] + p.dy);
     ctx.rotate(p.rot);
     ctx.translate(-p.c[0], -p.c[1]);
-    pathOf(p.poly);
-    ctx.clip();
-    ctx.drawImage(b.tex, b.x0, b.y0, b.tex.width / DPR, b.tex.height / DPR);
+    drawTexturedPoly(p.poly, p.block);
     ctx.restore();
   }
 }
 
 function drawParticles() {
   for (const g of game.particles) {
-    ctx.fillStyle = g.color;
-    ctx.fillRect(g.x, g.y, g.s, g.s);
+    if (g.glitter) {
+      ctx.fillStyle = `rgba(255,255,255,${0.5 + 0.5 * Math.sin(game.time * 0.02 + g.tw)})`;
+      ctx.fillRect(g.x - 0.5, g.y - 0.5, g.s + 1, g.s + 1);
+    } else {
+      ctx.fillStyle = g.color;
+      ctx.fillRect(g.x, g.y, g.s, g.s);
+    }
   }
+}
+
+function drawJarScene() {
+  const j = game.jar;
+  // soft shadow and reflection under the jar
+  const sh = ctx.createRadialGradient(L.jcx, L.jBottom + 6, 4, L.jcx, L.jBottom + 6, L.jw * 0.7);
+  sh.addColorStop(0, "rgba(10,0,25,.45)");
+  sh.addColorStop(1, "rgba(10,0,25,0)");
+  ctx.fillStyle = sh;
+  ctx.fillRect(L.jcx - L.jw, L.jBottom - 10, L.jw * 2, 30);
+
+  ctx.save();
+  let alpha = 1, scale = 1, dx = 0, dy = 0;
+  if (j.state === "entering") { const k = clamp(j.t / 0.6, 0, 1); alpha = k; scale = lerp(0.85, 1, easeOutBack(k)); }
+  if (j.state === "leaving") {
+    const k = clamp(j.t / 0.7, 0, 1), e = k * k;
+    const btn = $("shelfBtn").getBoundingClientRect();
+    alpha = 1 - k; scale = lerp(1, 0.15, e);
+    dx = (btn.left + btn.width / 2 - L.jcx) * e;
+    dy = (btn.top + btn.height / 2 - (L.jTop + L.jh / 2)) * e;
+  }
+  ctx.globalAlpha = alpha;
+  ctx.translate(L.jcx + dx, L.jTop + L.jh / 2 + dy);
+  ctx.scale(scale, scale);
+  ctx.translate(-L.jcx, -(L.jTop + L.jh / 2));
+  drawJar(ctx, L.jx0, L.jTop, j, game.time);
+  ctx.restore();
+}
+
+function drawSparks() {
+  ctx.save();
+  for (const s of game.sparks) {
+    const k = 1 - s.t / s.life, r = s.s * k;
+    ctx.globalAlpha = k;
+    ctx.fillStyle = s.color;
+    ctx.shadowColor = s.color;
+    ctx.shadowBlur = 8;
+    ctx.beginPath();
+    ctx.moveTo(s.x, s.y - r); ctx.lineTo(s.x + r * 0.28, s.y - r * 0.28); ctx.lineTo(s.x + r, s.y);
+    ctx.lineTo(s.x + r * 0.28, s.y + r * 0.28); ctx.lineTo(s.x, s.y + r); ctx.lineTo(s.x - r * 0.28, s.y + r * 0.28);
+    ctx.lineTo(s.x - r, s.y); ctx.lineTo(s.x - r * 0.28, s.y - r * 0.28);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.restore();
 }
 
 function drawGlints() {
@@ -678,14 +1279,11 @@ function drawGlints() {
     if (!g.a || !g.b) continue;
     const k = 1 - g.t / 0.6;
     ctx.save();
-    ctx.strokeStyle = `rgba(255,255,255,${0.9 * k})`;
+    ctx.strokeStyle = `rgba(255,255,255,${0.95 * k})`;
     ctx.shadowColor = "rgba(255,255,255,.9)";
-    ctx.shadowBlur = 12 * k;
+    ctx.shadowBlur = 14 * k;
     ctx.lineWidth = 2.5;
-    ctx.beginPath();
-    ctx.moveTo(g.a[0], g.a[1]);
-    ctx.lineTo(g.b[0], g.b[1]);
-    ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(g.a[0], g.a[1]); ctx.lineTo(g.b[0], g.b[1]); ctx.stroke();
     ctx.restore();
   }
 }
@@ -694,15 +1292,13 @@ function drawTrail() {
   const now = performance.now();
   ctx.save();
   ctx.lineCap = "round";
+  ctx.shadowColor = "rgba(255,255,255,.8)";
+  ctx.shadowBlur = 10;
   for (let i = 1; i < game.trail.length; i++) {
-    const p = game.trail[i - 1], q = game.trail[i];
-    const k = 1 - (now - q.t) / 220;
-    ctx.strokeStyle = `rgba(255,255,255,${0.8 * k})`;
+    const p = game.trail[i - 1], q = game.trail[i], k = 1 - (now - q.t) / 220;
+    ctx.strokeStyle = `rgba(255,255,255,${0.85 * k})`;
     ctx.lineWidth = 1 + 5 * k;
-    ctx.beginPath();
-    ctx.moveTo(p.x, p.y);
-    ctx.lineTo(q.x, q.y);
-    ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(q.x, q.y); ctx.stroke();
   }
   ctx.restore();
 }
@@ -710,45 +1306,57 @@ function drawTrail() {
 function drawFloaters() {
   ctx.save();
   ctx.textAlign = "center";
-  ctx.font = "700 24px ui-rounded, system-ui, sans-serif";
   for (const f of game.floaters) {
-    const k = f.t / 1.2;
+    const k = f.t / 1.3;
+    const pop = f.t < 0.15 ? lerp(0.5, 1.15, f.t / 0.15) : f.t < 0.25 ? lerp(1.15, 1, (f.t - 0.15) / 0.1) : 1;
+    ctx.save();
     ctx.globalAlpha = 1 - k * k;
+    ctx.translate(f.x, f.y - k * 40);
+    ctx.scale(pop, pop);
+    ctx.font = `800 ${f.size}px ui-rounded, system-ui, sans-serif`;
+    ctx.shadowColor = "rgba(20,0,40,.5)";
+    ctx.shadowBlur = 10;
     ctx.fillStyle = f.color;
-    ctx.fillText(f.text, f.x, f.y - k * 40);
+    ctx.fillText(f.text, 0, 0);
+    ctx.restore();
   }
   ctx.restore();
 }
 
-const scoreEl = document.getElementById("score");
-const comboEl = document.getElementById("combo");
+function drawHud() {
+  $("score").textContent = Math.round(game.shownScore).toLocaleString();
+  $("combo").textContent = game.combo >= 2 ? `×${game.combo}` : "";
+  const fill = clamp(jarFill() / 0.8, 0, 1);
+  $("fillPct").textContent = Math.round(fill * 100) + "%";
+  $("ringFg").setAttribute("stroke-dashoffset", (69.1 * (1 - fill)).toFixed(1));
+  const { exhale } = breath(game.time);
+  const label = exhale ? "breathe out" : "breathe in";
+  if ($("breath").textContent !== label) $("breath").textContent = label;
+}
 
-function frame(time) {
-  const dt = Math.min((time - (frame.last || time)) / 1000, 1 / 30);
-  frame.last = time;
+function frame(now) {
+  const dt = Math.min((now - (frame.last || now)) / 1000, 1 / 30);
+  frame.last = now;
   update(dt);
-
   drawBackground();
-  ctx.save();
-  ctx.globalAlpha = pileFade > 0 ? pileFade : 1;
-  ctx.drawImage(pile, 0, 0, W, H);
-  ctx.restore();
-  drawBlock();
-  drawGuide(time);
-  drawPieces();
+  drawBreathHalo();
+  drawJarScene();
   drawParticles();
+  drawFunnelAndPlate();
+  drawBlock();
+  drawGuide();
+  drawPieces();
   drawGlints();
+  drawSparks();
   drawTrail();
   drawFloaters();
-
-  scoreEl.textContent = game.score.toLocaleString();
-  comboEl.textContent = game.combo >= 2 ? `combo ×${game.combo}` : "";
+  drawHud();
   requestAnimationFrame(frame);
 }
 
 window.addEventListener("resize", resize);
 resize();
-newBlock(false);
+updateShelfCount();
 requestAnimationFrame(frame);
 </script>
 </body>
