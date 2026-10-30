@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <meta name="theme-color" content="#211a3b">
-<title>Crumble — sand, glass and a slow breath</title>
+<title>Sablune — sand, glass and a slow breath</title>
 <style>
   :root {
     --ink: #fff7fb;
@@ -136,7 +136,7 @@
 
 <div id="start" class="overlay">
   <div class="card glass">
-    <h1>Crumble</h1>
+    <h1>Sablune</h1>
     <p class="lead">Slice soft sand. Fill a glass jar. Breathe.</p>
     <p class="sub">Every jar is a two-minute calm ritual,<br>and a piece of sand art you keep on your shelf.</p>
     <p class="sub">🎧 headphones recommended</p>
@@ -907,7 +907,12 @@ $("closeShelf").addEventListener("click", () => {
   else if (game.jar.state === "done") show("done", true);
 });
 
-function shelf() { return store.get("crumble.shelf", []); }
+const SHELF_KEY = "sablune.shelf";
+// jars made before the rename lived under the old key
+if (store.get(SHELF_KEY, null) === null && store.get("crumble.shelf", null)) {
+  if (store.set(SHELF_KEY, store.get("crumble.shelf", []))) localStorage.removeItem("crumble.shelf");
+}
+function shelf() { return store.get(SHELF_KEY, []); }
 
 function openShelf() {
   const jars = shelf();
@@ -951,7 +956,7 @@ function finishJar() {
   const jars = shelf();
   jars.push({ name: j.name, img, date: Date.now(), cuts: s.cuts, calm: s.calm });
   while (jars.length > 30) jars.shift();
-  store.set("crumble.shelf", jars);
+  store.set(SHELF_KEY, jars);
   updateShelfCount();
   game.mode = "done";
   show("done", true);
