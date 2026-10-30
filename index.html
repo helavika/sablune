@@ -5,6 +5,24 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <meta name="theme-color" content="#211a3b">
 <title>Sablune — sand, glass and a slow breath</title>
+<meta name="description" content="A tiny ASMR sand-art game: slice soft sand, fill a glass jar, breathe. Every sound is made live in your browser.">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Sablune">
+<!-- share previews: these URLs assume GitHub Pages at helavika.github.io/sablune -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="Sablune — sand, glass and a slow breath">
+<meta property="og:description" content="Slice soft sand. Fill a glass jar. Breathe. A tiny ASMR sand-art game for your phone or browser.">
+<meta property="og:url" content="https://helavika.github.io/sablune/">
+<meta property="og:image" content="https://helavika.github.io/sablune/og-image.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Three finished sand-art jars on a glass shelf next to the word Sablune">
+<meta name="twitter:card" content="summary_large_image">
 <style>
   :root {
     --ink: #fff7fb;
@@ -1612,6 +1630,8 @@ function frame(now) {
 }
 
 window.addEventListener("resize", resize);
+if ("serviceWorker" in navigator && location.protocol !== "file:") navigator.serviceWorker.register("sw.js").catch(() => {});
+
 updateMaterials();
 resize();
 updateShelfCount();
