@@ -132,6 +132,9 @@
   #shelfGrid small { display: block; color: var(--soft); font-weight: 400; }
   @keyframes pop { from { opacity: 0; transform: translateY(10px) scale(.9); } }
   .empty { color: var(--soft); padding: 30px 0; }
+  .shelf-tools { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin-top: 4px; }
+  .shelf-tools button { border: 1px solid var(--glass-edge); background: rgba(255, 255, 255, .1); color: var(--ink); border-radius: 999px; padding: 8px 14px; font-weight: 700; font-size: 13px; cursor: pointer; }
+  #shelfMsg { font-size: 13px; color: var(--soft); min-height: 1.1em; margin: 6px 0 0; }
 
   .mats { display: inline-flex; gap: 4px; margin-top: 16px; padding: 4px; border-radius: 999px; background: rgba(255, 255, 255, .1); }
   .mats[hidden] { display: none; }
@@ -196,6 +199,8 @@
     <h2>Your shelf</h2>
     <p class="sub" id="shelfSub"></p>
     <div id="shelfGrid"></div>
+    <div class="shelf-tools"><button id="saveShelf">💾 Save shelf to a file</button><button id="loadShelf">📂 Load a shelf file</button><input type="file" id="shelfFile" accept=".json,application/json" hidden></div>
+    <p id="shelfMsg"></p>
     <button class="cta" id="closeShelf">Back</button>
   </div>
 </div>
@@ -1115,6 +1120,9 @@ $("nextJar").addEventListener("click", () => {
 });
 
 for (const id of ["shelfBtn", "doneShelf", "startShelf"]) $(id).addEventListener("click", openShelf);
+$("saveShelf").addEventListener("click", saveShelfFile);
+$("loadShelf").addEventListener("click", () => $("shelfFile").click());
+$("shelfFile").addEventListener("change", e => { const f = e.target.files[0]; e.target.value = ""; if (f) loadShelfFile(f); });
 $("closeShelf").addEventListener("click", () => {
   show("shelf", false);
   if (game.mode === "menu") show("start", true);
@@ -1128,8 +1136,77 @@ if (store.get(SHELF_KEY, null) === null && store.get("crumble.shelf", null)) {
 }
 function shelf() { return store.get(SHELF_KEY, []); }
 
+/**
+ * Jars are kept as small pictures: the shelf shows them small anyway, and big ones once filled the
+ * browser's storage (which Sablune shares with Hatchstone on the same site) until saving silently stopped.
+ */
+const THUMB_H = 200;
+function shrinkPicture(src, h = THUMB_H) {
+  return new Promise(resolve => {
+    const im = new Image();
+    im.onload = () => {
+      if (im.height <= h) return resolve(src);
+      const c = document.createElement("canvas");
+      c.height = h; c.width = Math.round(im.width * h / im.height);
+      c.getContext("2d").drawImage(im, 0, 0, c.width, c.height);
+      resolve(c.toDataURL("image/png"));
+    };
+    im.onerror = () => resolve(src);
+    im.src = src;
+  });
+}
+
+/** Save the shelf; if storage is full, shrink every picture further before giving up. */
+async function saveShelf(jars) {
+  if (store.set(SHELF_KEY, jars)) return true;
+  for (const j of jars) j.img = await shrinkPicture(j.img, 120);
+  if (store.set(SHELF_KEY, jars)) return true;
+  $("shelfMsg").textContent = "Your shelf is too full to save here: save it to a file to keep every jar.";
+  return false;
+}
+
+// shelves from before: shrink their big pictures once
+(async () => {
+  const jars = shelf();
+  if (!jars.some(j => j.img && j.img.length > 40000)) return;
+  for (const j of jars) if (j.img && j.img.length > 40000) j.img = await shrinkPicture(j.img);
+  await saveShelf(jars);
+})();
+
+if (navigator.storage && navigator.storage.persist && shelf().length) navigator.storage.persist().catch(() => {});
+
+/** The shelf as a file: the jars themselves are pictures, so a file (not a short code) is the right way to carry them. */
+function saveShelfFile() {
+  const data = { app: "sablune", v: 1, shelf: shelf(), soap: store.get("sablune.soap", false), material: store.get("sablune.material", "sand") };
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(data)], { type: "application/json" }));
+  a.download = `sablune-shelf-${new Date().toISOString().slice(0, 10)}.json`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  $("shelfMsg").textContent = "Saved ✓ Keep the file somewhere safe; load it here on any device.";
+}
+
+/** Loading a shelf file adds its jars to this shelf (nothing here is thrown away). */
+async function loadShelfFile(file) {
+  let data;
+  try { data = JSON.parse(await file.text()); } catch { data = null; }
+  if (!data || data.app !== "sablune" || !Array.isArray(data.shelf)) { $("shelfMsg").textContent = "That isn't a Sablune shelf file."; return; }
+  const jars = shelf(), have = new Set(jars.map(j => j.date + j.name));
+  const added = data.shelf.filter(j => j && j.img && !have.has(j.date + j.name));
+  for (const j of added) j.img = await shrinkPicture(j.img);
+  const all = [...jars, ...added].sort((a, b) => a.date - b.date);
+  while (all.length > 30) all.shift();
+  await saveShelf(all);
+  if (data.soap) store.set("sablune.soap", true);
+  updateShelfCount();
+  updateMaterials();
+  openShelf();
+  $("shelfMsg").textContent = added.length ? `Welcome back, ${added.length} jar${added.length === 1 ? "" : "s"} ✦` : "Those jars are already on your shelf.";
+}
+
 function openShelf() {
   const jars = shelf();
+  $("shelfMsg").textContent = "";
   show("start", false); show("done", false);
   $("shelfSub").textContent = jars.length
     ? `${jars.length} jar${jars.length > 1 ? "s" : ""} of calm, made by you`
@@ -1146,9 +1223,9 @@ function updateShelfCount() {
   $("startShelf").hidden = n === 0;
 }
 
-/** Render the finished jar to a small image for the card and the shelf. */
-function jarImage() {
-  const s = 1.3, pad = 14, top = 40;
+/** Render the finished jar to an image: full size for the card, or a given height for the shelf. */
+function jarImage(height = 0) {
+  const pad = 14, top = 40, s = height ? height / (L.jh + top + pad) : 1.3;
   const c = document.createElement("canvas");
   c.width = Math.round((L.jw + pad * 2) * s); c.height = Math.round((L.jh + top + pad) * s);
   const o = c.getContext("2d");
@@ -1169,9 +1246,10 @@ function finishJar() {
   $("stTime").textContent = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`;
   const wasUnlocked = soapUnlocked();
   const jars = shelf();
-  jars.push({ name: j.name, img, date: Date.now(), cuts: s.cuts, calm: s.calm, material: j.material });
+  jars.push({ name: j.name, img: jarImage(THUMB_H), date: Date.now(), cuts: s.cuts, calm: s.calm, material: j.material });
   while (jars.length > 30) jars.shift();
-  store.set(SHELF_KEY, jars);
+  saveShelf(jars);
+  if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
   store.set("sablune.soap", true);
   $("unlockNote").hidden = wasUnlocked;
   updateShelfCount();
