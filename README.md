@@ -1,13 +1,13 @@
 # Sablune
 
 *sable + lune: sand and moonlight.* A tiny ASMR sand-and-glass game for the browser
-and phones. Swipe along the glowing line to slice a block of layered pastel sand,
-watch the slice crumble down a glass funnel into a jar, and build a little piece of
-sand art, one slow breath at a time. 🎧 Best with headphones.
+and phones. Draw a little blade along the glowing line to slice a block of layered
+pastel sand (or press and hold it to squish it), watch the slice tip over and crumble
+down a glass funnel into a jar, and build a little piece of sand art, one slow breath at a time. 🎧 Best with headphones.
 
 - No libraries: the whole game is one `index.html` with canvas and the Web Audio API
   (the icons, manifest and service worker are only there so it can be installed and played offline)
-- Every sound (slice scrape, crunchy grains, settling sand, chimes, cork pop, glass clink) is synthesized live
+- Every sound (a scrape that follows your hand, crunchy grains, the thud of a falling slice, pouring and settling sand, squishes, chimes, cork pop, glass clink) is synthesized live
 - A breathing guide (4s in / 4s out) glows around the block; cutting on the out-breath is a "calm" cut
 - Grains keep the colors of the layer they came from and pile up into sand-art layers
 - Fill the jar, cork it and keep it on your shelf; nothing to fail
