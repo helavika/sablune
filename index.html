@@ -29,6 +29,8 @@
     backdrop-filter: blur(14px) saturate(140%); -webkit-backdrop-filter: blur(14px) saturate(140%);
   }
 
+  body.low .glass { backdrop-filter: none; -webkit-backdrop-filter: none; background: rgba(48, 32, 80, .62); }
+
   #hud {
     position: fixed; inset: 0 0 auto 0; display: flex; justify-content: space-between; align-items: center; gap: 8px;
     padding: max(14px, env(safe-area-inset-top)) 14px 0; pointer-events: none;
@@ -66,6 +68,7 @@
     transition: opacity .5s, visibility .5s;
   }
   .overlay.hidden { opacity: 0; visibility: hidden; pointer-events: none; }
+  .overlay.hidden * { animation-play-state: paused; }
   .card { width: min(380px, 100%); border-radius: 28px; padding: 28px 24px; text-align: center; }
   .overlay.hidden .card { transform: translateY(16px) scale(.97); }
   .card { transition: transform .5s cubic-bezier(.2, .9, .3, 1.2); }
@@ -431,14 +434,16 @@ const PALETTES = [
   ["#ffd6a5", "#fdffb6", "#caffbf"],
 ];
 const SEAM = "#fff6ee";
-const COL_W = 3;
 const NAMES_A = ["Lavender", "Peach", "Moonlit", "Velvet", "Honey", "Misty", "Rosy", "Sea-glass", "Dusk", "Cloud", "Opal", "Saffron"];
 const NAMES_B = ["Dunes", "Garden", "Tide", "Bloom", "Drift", "Hush", "Morning", "Reverie", "Meadow", "Lagoon", "Lullaby", "Shore"];
 
 function computeLayout() {
   const top = 112;
   const safeBottom = 34;
-  L.jw = clamp(Math.min(W * 0.5, 230), 150, 230);
+  // on phones the width decides; on wide screens the jar and block grow until the stack fills the height
+  L.jw = clamp(Math.min(W * 0.5, (H - top - safeBottom - 18) / 2.5), 150, 380);
+  L.k = L.jw / 200; // scene scale: grain size, columns and thresholds follow it
+  L.col = 3 * L.k;
   L.jh = L.jw * 1.12;
   L.jcx = W / 2;
   L.jBottom = H - safeBottom - 18;
@@ -446,10 +451,10 @@ function computeLayout() {
   L.jx0 = L.jcx - L.jw / 2;
   L.neckH = L.jh * 0.13;
   L.mouthW = L.jw * 0.6;
-  L.wall = 4;
-  L.pedY = L.jTop - 64;
-  L.bw = clamp(Math.min(W * 0.56, 280), 160, 280);
-  L.bh = clamp(Math.min(L.bw * 0.82, L.pedY - top - 12), 110, 240);
+  L.wall = Math.max(4, 4 * L.k);
+  L.pedY = L.jTop - 64 * clamp(L.k, 1, 1.4);
+  L.bw = clamp(Math.min(W * 0.56, L.jw * 1.25), 160, 470);
+  L.bh = clamp(Math.min(L.bw * 0.82, L.pedY - top - 12), 110, 380);
   L.bx0 = L.jcx - L.bw / 2;
   L.by0 = L.pedY - L.bh;
   L.funnelTop = L.pedY + 22;
@@ -460,14 +465,37 @@ function computeLayout() {
   L.bodyTop = L.jTop + L.neckH;
 }
 
+// Textures are made at DPR; the main canvas renders at quality.dpr, which drops on slow devices.
+const quality = {
+  dpr: 1, low: false, pinned: /[?&]q=high\b/.test(location.search), acc: 0, n: 0,
+  /** Watch real frame times while playing; step resolution down if the device can't keep up. */
+  sample(ms) {
+    if (this.pinned || game.mode !== "play" || ms > 250) return;
+    this.acc += ms; this.n++;
+    if (this.n < 90) return;
+    const avg = this.acc / this.n;
+    this.acc = this.n = 0;
+    if (avg < 22) return;
+    if (this.dpr > 1) { this.dpr = Math.max(1, this.dpr - 0.5); sizeCanvas(); }
+    else if (!this.low) { this.low = true; document.body.classList.add("low"); makeOrbs(); }
+  },
+};
+
+function sizeCanvas() {
+  cvs.width = Math.round(W * quality.dpr); cvs.height = Math.round(H * quality.dpr);
+  ctx.setTransform(quality.dpr, 0, 0, quality.dpr, 0, 0);
+}
+
 function resize() {
   const oldW = W, oldH = H;
   DPR = Math.min(window.devicePixelRatio || 1, 2);
   W = window.innerWidth; H = window.innerHeight;
-  cvs.width = Math.round(W * DPR); cvs.height = Math.round(H * DPR);
-  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  quality.dpr = Math.min(quality.dpr === 1 && !oldW ? DPR : quality.dpr, DPR);
+  sizeCanvas();
+  makeBackground();
   if (oldW === W && Math.abs(oldH - H) < 120 && game.jar) return; // ignore tiny mobile toolbar changes
   computeLayout();
+  makeGlass();
   makeOrbs();
   newJar(false);
   newBlock(false);
@@ -483,6 +511,7 @@ const game = {
   jar: null, clearing: false, time: 0,
 };
 window.__game = game; // handy for debugging in the console
+game.quality = quality;
 
 // ---------- background orbs ----------
 
@@ -505,7 +534,7 @@ function orbSprite(r, color) {
 }
 function makeOrbs() {
   const colors = ["rgba(245,163,199,.55)", "rgba(185,162,255,.55)", "rgba(143,211,255,.5)", "rgba(255,214,165,.5)"];
-  orbs = Array.from({ length: Math.round(clamp(W * H / 60000, 8, 18)) }, () => {
+  orbs = Array.from({ length: Math.round(clamp(W * H / 60000, 8, quality.low ? 8 : 18)) }, () => {
     const r = rand(18, 70);
     return { x: rand(0, W), y: rand(0, H), r, vy: rand(4, 12), sway: rand(0, 6.28), a: rand(0.12, 0.35), sprite: orbSprite(r, pick(colors)) };
   });
@@ -520,7 +549,7 @@ function makeTexture(w, h, palette) {
   t.setTransform(DPR, 0, 0, DPR, 0, 0);
   t.fillStyle = SEAM;
   t.fillRect(0, 0, w, h);
-  const bandH = rand(20, 32), bands = Math.ceil(h / bandH) + 2;
+  const bandH = rand(20, 32) * L.k, bands = Math.ceil(h / bandH) + 2;
   const phase = rand(0, 10), freq = rand(0.015, 0.03), amp = bandH * rand(0.2, 0.45);
   for (let x = 0; x < w; x++) {
     for (let b = -1; b < bands; b++) {
@@ -528,17 +557,21 @@ function makeTexture(w, h, palette) {
       t.fillRect(x, b * bandH + Math.sin(x * freq + phase + b * 0.7) * amp, 1.2, bandH - 1.2);
     }
   }
-  for (let i = 0, n = Math.round(w * h / 5); i < n; i++) {
-    t.fillStyle = Math.random() < 0.5 ? "rgba(255,255,255,0.25)" : "rgba(80,50,70,0.07)";
-    t.fillRect(Math.random() * w, Math.random() * h, rand(0.6, 1.4), rand(0.6, 1.4));
+  // speckles: a light or dark grain on about one pixel in five, written straight into the pixels
+  const img = t.getImageData(0, 0, tex.width, tex.height), d = img.data;
+  for (let i = 0; i < d.length; i += 4) {
+    const r = Math.random();
+    if (r < 0.1) { d[i] += (255 - d[i]) * 0.25; d[i + 1] += (255 - d[i + 1]) * 0.25; d[i + 2] += (255 - d[i + 2]) * 0.25; }
+    else if (r < 0.2) { d[i] += (80 - d[i]) * 0.07; d[i + 1] += (50 - d[i + 1]) * 0.07; d[i + 2] += (70 - d[i + 2]) * 0.07; }
   }
-  return { tex, data: t.getImageData(0, 0, tex.width, tex.height).data, texW: tex.width };
+  t.putImageData(img, 0, 0);
+  return { tex, data: d, texW: tex.width };
 }
 
 function newBlock(animate = true) {
   const palette = [...pick(PALETTES)].sort(() => Math.random() - 0.5);
   const { tex, data, texW } = makeTexture(L.bw, L.bh, palette);
-  const poly = roundedRect(L.bx0, L.by0, L.bw, L.bh, 20);
+  const poly = roundedRect(L.bx0, L.by0, L.bw, L.bh, 20 * L.k);
   game.block = { poly, startArea: area(poly), tex, texData: data, texW, x0: L.bx0, y0: L.by0, enterT: animate ? 0 : 1 };
   game.clearing = false;
   newGuide();
@@ -547,7 +580,7 @@ function newBlock(animate = true) {
 /** A fresh guide line that shaves 15–30% off one side (or the top) of the block. */
 function newGuide() {
   const poly = game.block.poly, c = centroid(poly), box = bbox(poly);
-  if (Math.random() < 0.22 && box.y1 - box.y0 > 110) {
+  if (Math.random() < 0.22 && box.y1 - box.y0 > 110 * L.k) {
     const a = rand(-0.25, 0.25);
     game.guide = { p: [c[0], box.y0 + (box.y1 - box.y0) * rand(0.18, 0.3)], d: norm([Math.cos(a), Math.sin(a)]) };
   } else {
@@ -573,11 +606,11 @@ function newJar(animate = true) {
   sand.width = Math.round(L.jw * DPR); sand.height = Math.round(L.jh * DPR);
   const sctx = sand.getContext("2d");
   sctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-  const cols = Math.ceil((L.innerHW * 2) / COL_W);
+  const cols = Math.ceil((L.innerHW * 2) / L.col);
   // the rounded bottom of the jar starts each edge column a little higher
   const r = L.jw * 0.16;
   const heap = Array.from({ length: cols }, (_, i) => {
-    const x = i * COL_W + COL_W / 2, fromEdge = Math.min(x, L.innerHW * 2 - x);
+    const x = i * L.col + L.col / 2, fromEdge = Math.min(x, L.innerHW * 2 - x);
     return fromEdge < r ? r - Math.sqrt(Math.max(0, r * r - (r - fromEdge) ** 2)) : 0;
   });
   game.jar = {
@@ -612,16 +645,16 @@ function jarPath(c, x, y, w, h, neckH, mouthW, close = true) {
   if (close) c.closePath();
 }
 
-/** Draw the jar at (x, y): sand inside, then glass, highlights and the cork on top. */
-function drawJar(c, x, y, j, time) {
-  const { jw, jh, neckH, mouthW, wall } = L;
-  // sand, clipped to the inside of the glass
-  c.save();
-  jarPath(c, x + wall, y, jw - wall * 2, jh - wall, neckH, mouthW - wall * 2);
-  c.clip();
-  c.drawImage(j.sand, x, y, jw, jh);
-  c.restore();
+const GP = 8; // room around the glass sprite for the rim and strokes
 
+/** The empty glass never changes during a jar, so it is painted once per layout. */
+function makeGlass() {
+  const { jw, jh, neckH, mouthW } = L;
+  const s = document.createElement("canvas");
+  s.width = Math.ceil((jw + GP * 2) * DPR); s.height = Math.ceil((jh + GP * 2) * DPR);
+  const c = s.getContext("2d");
+  c.setTransform(DPR, 0, 0, DPR, 0, 0);
+  const x = GP, y = GP;
   // glass body: brighter at the edges, like a real curved jar
   const g = c.createLinearGradient(x, 0, x + jw, 0);
   g.addColorStop(0, "rgba(255,255,255,.26)");
@@ -649,17 +682,6 @@ function drawJar(c, x, y, j, time) {
   c.fillStyle = "rgba(255,255,255,.22)";
   roundRect(c, x + jw * 0.85, y + neckH + jw * 0.2, jw * 0.025, jh * 0.38, jw * 0.012);
   c.fill();
-
-  // a band of light that sweeps across the glass when the jar is finished
-  if (j.sweep >= 0 && j.sweep <= 1) {
-    const sx = lerp(x - jw * 0.6, x + jw * 1.4, j.sweep);
-    const s = c.createLinearGradient(sx - 40, y, sx + 40, y + 60);
-    s.addColorStop(0, "rgba(255,255,255,0)");
-    s.addColorStop(0.5, "rgba(255,255,255,.55)");
-    s.addColorStop(1, "rgba(255,255,255,0)");
-    c.fillStyle = s;
-    c.fillRect(x, y, jw, jh);
-  }
   c.restore();
 
   jarPath(c, x, y, jw, jh, neckH, mouthW, false);
@@ -674,6 +696,34 @@ function drawJar(c, x, y, j, time) {
   c.strokeStyle = "rgba(255,255,255,.7)";
   c.lineWidth = 1.4;
   c.stroke();
+  L.glass = s;
+}
+
+/** Draw the jar at (x, y): sand inside, then glass, highlights and the cork on top. */
+function drawJar(c, x, y, j) {
+  const { jw, jh, neckH, mouthW, wall } = L;
+  // sand, clipped to the inside of the glass
+  c.save();
+  jarPath(c, x + wall, y, jw - wall * 2, jh - wall, neckH, mouthW - wall * 2);
+  c.clip();
+  c.drawImage(j.sand, x, y, jw, jh);
+  c.restore();
+  c.drawImage(L.glass, x - GP, y - GP, jw + GP * 2, jh + GP * 2);
+
+  // a band of light that sweeps across the glass when the jar is finished
+  if (j.sweep >= 0 && j.sweep <= 1) {
+    c.save();
+    jarPath(c, x, y, jw, jh, neckH, mouthW);
+    c.clip();
+    const sx = lerp(x - jw * 0.6, x + jw * 1.4, j.sweep);
+    const s = c.createLinearGradient(sx - 40, y, sx + 40, y + 60);
+    s.addColorStop(0, "rgba(255,255,255,0)");
+    s.addColorStop(0.5, "rgba(255,255,255,.55)");
+    s.addColorStop(1, "rgba(255,255,255,0)");
+    c.fillStyle = s;
+    c.fillRect(x, y, jw, jh);
+    c.restore();
+  }
 
   if (j.cork > 0) drawCork(c, x + jw / 2, y, j.cork, mouthW, neckH);
 }
@@ -716,17 +766,18 @@ function roundRect(c, x, y, w, h, r) {
 /** Bake one landed grain into the jar's sand. */
 function bakeGrain(g) {
   const j = game.jar;
-  let col = clamp(Math.floor((g.x - (L.jcx - L.innerHW)) / COL_W), 0, j.cols - 1);
-  for (let k = 0; k < 40; k++) {
+  let col = clamp(Math.floor((g.x - (L.jcx - L.innerHW)) / L.col), 0, j.cols - 1);
+  for (let k = 0; k < 60; k++) {
     const l = j.heap[col - 1] ?? Infinity, r = j.heap[col + 1] ?? Infinity;
-    if (Math.min(l, r) < j.heap[col] - g.s * 0.7) col += (l < r || (l === r && Math.random() < 0.5)) ? -1 : 1;
+    // a gentle angle of repose: grains roll off until the slope is soft, so layers lie like sand art
+    if (Math.min(l, r) < j.heap[col] - g.s * 0.45) col += (l < r || (l === r && Math.random() < 0.5)) ? -1 : 1;
     else break;
   }
   const inc = g.s * 0.6;
-  const lx = (L.jcx - L.innerHW) + col * COL_W - L.jx0;
+  const lx = (L.jcx - L.innerHW) + col * L.col - L.jx0;
   const ly = L.innerBottom - j.heap[col] - inc - L.jTop;
   j.sctx.fillStyle = g.color;
-  j.sctx.fillRect(lx + rand(-0.6, 0.6), ly, COL_W + 1.2, inc + 0.9);
+  j.sctx.fillRect(lx + rand(-0.6, 0.6), ly, L.col + 1.2, inc + 0.9);
   if (g.glitter) {
     j.sctx.fillStyle = "rgba(255,255,255,.95)";
     j.sctx.fillRect(lx + 1, ly, 1.4, 1.4);
@@ -750,7 +801,8 @@ function tryCut(start, end, durSec) {
   const { left, right, cut } = split(b.poly, start, dn);
   const along = cut.map(q => dot(sub(q, start), d) / dot(d, d));
   const crosses = cut.length >= 2 && along.every(t => t > -0.15 && t < 1.15);
-  if (!crosses || area(left) < 150 || area(right) < 150) { sfx.whoosh(); return; }
+  const minArea = 150 * L.k * L.k;
+  if (!crosses || area(left) < minArea || area(right) < minArea) { sfx.whoosh(); return; }
 
   const [keep, drop] = area(left) >= area(right) ? [left, right] : [right, left];
 
@@ -832,7 +884,7 @@ function spawnPiece(poly, keep) {
 function crumble(piece) {
   const { poly, c, block } = piece;
   const box = bbox(poly), a = area(poly);
-  const n = Math.round(clamp(a / 14, 40, 1400));
+  const n = Math.round(clamp(a / (14 * L.k * L.k), 40, quality.low ? 900 : 1400));
   const cos = Math.cos(piece.rot), sin = Math.sin(piece.rot);
   let made = 0, tries = 0;
   while (made < n && tries < n * 6) {
@@ -846,7 +898,7 @@ function crumble(piece) {
       y: c[1] + piece.dy + rx * sin + ry * cos,
       vx: piece.vx * rand(0.5, 1.1) + rand(-35, 35) + rx * rand(0.4, 1.2),
       vy: piece.vy * rand(0.6, 1.1) + rand(-30, 10),
-      s: rand(1.6, 3.2),
+      s: rand(1.6, 3.2) * L.k,
       color: glitter ? "#fffdf6" : sampleColor(block, p),
       glitter, tw: rand(0, 6.28),
     });
@@ -939,7 +991,7 @@ function jarImage() {
   c.width = Math.round((L.jw + pad * 2) * s); c.height = Math.round((L.jh + top + pad) * s);
   const o = c.getContext("2d");
   o.scale(s, s);
-  drawJar(o, pad, top, { ...game.jar, sweep: -1, cork: 1 }, 0);
+  drawJar(o, pad, top, { ...game.jar, sweep: -1, cork: 1 });
   return c.toDataURL("image/png");
 }
 
@@ -989,26 +1041,33 @@ function update(dt) {
   // grains fall, slide down the glass funnel and settle in the jar
   let landed = 0;
   const still = [];
+  const drag = Math.exp(-0.9 * dt);
+  // direction down the right-hand funnel wall (mirrored for the left)
+  const wx = L.funnelBotHW - L.funnelTopHW, wy = L.jTop - L.funnelTop, wl = Math.hypot(wx, wy);
   for (const g of game.particles) {
     g.vy += GRAVITY * dt;
-    g.vx *= 0.985;
+    g.vx *= drag;
     g.x += g.vx * dt; g.y += g.vy * dt;
     if (g.y >= L.funnelTop && g.y < L.jTop) {
       const hw = lerp(L.funnelTopHW, L.funnelBotHW, (g.y - L.funnelTop) / (L.jTop - L.funnelTop));
+      const side = Math.sign(g.x - L.jcx);
       if (Math.abs(g.x - L.jcx) > hw) {
-        g.x = L.jcx + Math.sign(g.x - L.jcx) * hw;
-        g.vx = -Math.sign(g.x - L.jcx) * (Math.abs(g.vx) * 0.25 + 30);
-        g.vy *= 0.9;
+        // slide along the glass instead of bouncing: keep the speed along the wall, lose a little to friction
+        g.x = L.jcx + side * hw;
+        const tx = side * wx / wl, ty = wy / wl;
+        const along = Math.max(0, g.vx * tx + g.vy * ty) * 0.92;
+        g.vx = tx * along - side * rand(2, 14);
+        g.vy = ty * along;
       }
     } else if (g.y >= L.jTop) {
       if (!g.poured) {
         g.poured = true;
-        g.x = L.jcx + rand(-1, 1) * L.funnelBotHW * 0.9;
-        g.vx = rand(-1, 1) * L.innerHW * 1.6;
+        g.x = clamp(g.x, L.jcx - L.funnelBotHW, L.jcx + L.funnelBotHW);
+        g.vx += rand(-1, 1) * L.innerHW * 1.2;
       }
       const hw = g.y < L.bodyTop ? L.funnelBotHW : L.innerHW - 1;
       if (Math.abs(g.x - L.jcx) > hw) { g.x = L.jcx + Math.sign(g.x - L.jcx) * hw; g.vx *= -0.3; }
-      const col = clamp(Math.floor((g.x - (L.jcx - L.innerHW)) / COL_W), 0, j.cols - 1);
+      const col = clamp(Math.floor((g.x - (L.jcx - L.innerHW)) / L.col), 0, j.cols - 1);
       if (g.y + g.s >= L.innerBottom - j.heap[col]) {
         if (j.state === "filling" || j.state === "corking") bakeGrain(g);
         landed++;
@@ -1044,7 +1103,8 @@ function update(dt) {
     newJar(true);
   }
 
-  for (const s of game.sparks) { s.t += dt; s.vy += 160 * dt; s.x += s.vx * dt; s.y += s.vy * dt; s.vx *= 0.97; }
+  const sparkDrag = Math.exp(-1.8 * dt);
+  for (const s of game.sparks) { s.t += dt; s.vy += 160 * dt; s.x += s.vx * dt; s.y += s.vy * dt; s.vx *= sparkDrag; }
   game.sparks = game.sparks.filter(s => s.t < s.life);
   for (const f of game.floaters) f.t += dt;
   game.floaters = game.floaters.filter(f => f.t < 1.3);
@@ -1063,18 +1123,28 @@ function pathOf(poly) {
   ctx.closePath();
 }
 
-function drawBackground() {
-  const g = ctx.createLinearGradient(0, 0, 0, H);
+/** The dusk gradient and its warm glow never change, so paint them once (at low res: they're soft anyway). */
+let bg = null;
+function makeBackground() {
+  bg = document.createElement("canvas");
+  bg.width = Math.ceil(W / 2); bg.height = Math.ceil(H / 2);
+  const o = bg.getContext("2d");
+  o.scale(0.5, 0.5);
+  const g = o.createLinearGradient(0, 0, 0, H);
   g.addColorStop(0, "#1d1636");
   g.addColorStop(0.55, "#43295f");
   g.addColorStop(1, "#7d4672");
-  ctx.fillStyle = g;
-  ctx.fillRect(0, 0, W, H);
-  const glow = ctx.createRadialGradient(W / 2, H * 0.95, 10, W / 2, H * 0.95, Math.max(W, H) * 0.6);
+  o.fillStyle = g;
+  o.fillRect(0, 0, W, H);
+  const glow = o.createRadialGradient(W / 2, H * 0.95, 10, W / 2, H * 0.95, Math.max(W, H) * 0.6);
   glow.addColorStop(0, "rgba(255,190,210,.35)");
   glow.addColorStop(1, "rgba(255,190,210,0)");
-  ctx.fillStyle = glow;
-  ctx.fillRect(0, 0, W, H);
+  o.fillStyle = glow;
+  o.fillRect(0, 0, W, H);
+}
+
+function drawBackground() {
+  ctx.drawImage(bg, 0, 0, W, H);
   for (const o of orbs) {
     ctx.globalAlpha = o.a;
     ctx.drawImage(o.sprite, o.x + Math.sin(o.sway) * 14 - o.r, o.y - o.r, o.r * 2, o.r * 2);
@@ -1248,7 +1318,7 @@ function drawJarScene() {
   if (j.state === "entering") { const k = clamp(j.t / 0.6, 0, 1); alpha = k; scale = lerp(0.85, 1, easeOutBack(k)); }
   if (j.state === "leaving") {
     const k = clamp(j.t / 0.7, 0, 1), e = k * k;
-    const btn = $("shelfBtn").getBoundingClientRect();
+    const btn = j.target || (j.target = $("shelfBtn").getBoundingClientRect());
     alpha = 1 - k; scale = lerp(1, 0.15, e);
     dx = (btn.left + btn.width / 2 - L.jcx) * e;
     dy = (btn.top + btn.height / 2 - (L.jTop + L.jh / 2)) * e;
@@ -1257,7 +1327,7 @@ function drawJarScene() {
   ctx.translate(L.jcx + dx, L.jTop + L.jh / 2 + dy);
   ctx.scale(scale, scale);
   ctx.translate(-L.jcx, -(L.jTop + L.jh / 2));
-  drawJar(ctx, L.jx0, L.jTop, j, game.time);
+  drawJar(ctx, L.jx0, L.jTop, j);
   ctx.restore();
 }
 
@@ -1268,7 +1338,7 @@ function drawSparks() {
     ctx.globalAlpha = k;
     ctx.fillStyle = s.color;
     ctx.shadowColor = s.color;
-    ctx.shadowBlur = 8;
+    ctx.shadowBlur = quality.low ? 0 : 8;
     ctx.beginPath();
     ctx.moveTo(s.x, s.y - r); ctx.lineTo(s.x + r * 0.28, s.y - r * 0.28); ctx.lineTo(s.x + r, s.y);
     ctx.lineTo(s.x + r * 0.28, s.y + r * 0.28); ctx.lineTo(s.x, s.y + r); ctx.lineTo(s.x - r * 0.28, s.y + r * 0.28);
@@ -1298,7 +1368,7 @@ function drawTrail() {
   ctx.save();
   ctx.lineCap = "round";
   ctx.shadowColor = "rgba(255,255,255,.8)";
-  ctx.shadowBlur = 10;
+  ctx.shadowBlur = quality.low ? 0 : 10;
   for (let i = 1; i < game.trail.length; i++) {
     const p = game.trail[i - 1], q = game.trail[i], k = 1 - (now - q.t) / 220;
     ctx.strokeStyle = `rgba(255,255,255,${0.85 * k})`;
@@ -1320,7 +1390,7 @@ function drawFloaters() {
     ctx.scale(pop, pop);
     ctx.font = `800 ${f.size}px ui-rounded, system-ui, sans-serif`;
     ctx.shadowColor = "rgba(20,0,40,.5)";
-    ctx.shadowBlur = 10;
+    ctx.shadowBlur = quality.low ? 0 : 10;
     ctx.fillStyle = f.color;
     ctx.fillText(f.text, 0, 0);
     ctx.restore();
@@ -1328,21 +1398,29 @@ function drawFloaters() {
   ctx.restore();
 }
 
+const hudCache = {};
+function setHud(id, value, attr) {
+  if (hudCache[id] === value) return;
+  hudCache[id] = value;
+  if (attr) $(id).setAttribute(attr, value); else $(id).textContent = value;
+}
+
 function drawHud() {
-  $("score").textContent = Math.round(game.shownScore).toLocaleString();
-  $("combo").textContent = game.combo >= 2 ? `×${game.combo}` : "";
+  setHud("score", Math.round(game.shownScore).toLocaleString());
+  setHud("combo", game.combo >= 2 ? `×${game.combo}` : "");
   const fill = clamp(jarFill() / 0.8, 0, 1);
-  $("fillPct").textContent = Math.round(fill * 100) + "%";
-  $("ringFg").setAttribute("stroke-dashoffset", (69.1 * (1 - fill)).toFixed(1));
-  const { exhale } = breath(game.time);
-  const label = exhale ? "breathe out" : "breathe in";
-  if ($("breath").textContent !== label) $("breath").textContent = label;
+  setHud("fillPct", Math.round(fill * 100) + "%");
+  setHud("ringFg", (69.1 * (1 - fill)).toFixed(1), "stroke-dashoffset");
+  setHud("breath", breath(game.time).exhale ? "breathe out" : "breathe in");
 }
 
 function frame(now) {
-  const dt = Math.min((now - (frame.last || now)) / 1000, 1 / 30);
+  const ms = now - (frame.last || now);
   frame.last = now;
-  update(dt);
+  quality.sample(ms);
+  // up to 3 steps of at most 1/60 s: slow frames still move the sand smoothly
+  const dt = Math.min(ms / 1000, 0.05), steps = Math.ceil(dt * 60 - 0.01) || 1;
+  for (let i = 0; i < steps; i++) update(dt / steps);
   drawBackground();
   drawBreathHalo();
   drawJarScene();
